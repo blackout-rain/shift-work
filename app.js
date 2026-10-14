@@ -33,6 +33,16 @@
   const firstRun = !state;
   if (!state) state = defaults();
 
+  // 公開ページなど、ダウンロードや印刷が使えない環境か
+  const sandboxed = typeof window.claude !== 'undefined';
+  function toast(text) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
   const now = new Date();
   const ui = { year: now.getFullYear(), month: now.getMonth(), mode: 'off', msg: null };
 
@@ -249,6 +259,15 @@
       lines.push(line);
     });
     const csv = lines.map((l) => l.map((v) => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+    if (sandboxed) {
+      // ダウンロードできない環境では、Excelに貼り付けられるタブ区切りでコピーする
+      const tsv = lines.map((l) => l.join('\t')).join('\n');
+      const done = () => toast('表をコピーしました。Excelやスプレッドシートに貼り付けられます');
+      const fail = () => toast('コピーできませんでした');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tsv).then(done, fail);
+      else fail();
+      return;
+    }
     const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
@@ -305,6 +324,10 @@
   $('nextMonth').onclick = () => shiftMonth(1);
   $('solveBtn').onclick = solve;
   $('csvBtn').onclick = exportCsv;
+  if (sandboxed) {
+    $('csvBtn').textContent = '表をコピー';
+    $('printBtn').hidden = true;
+  }
   $('printBtn').onclick = () => window.print();
   $('modeOff').onclick = () => setMode('off');
   $('modeWork').onclick = () => setMode('work');
@@ -354,8 +377,21 @@
     renderSettings();
     changed();
   };
+  let resetTimer = null;
   $('resetBtn').onclick = () => {
-    if (!window.confirm('入力した内容をすべて消して、初期状態に戻します。よろしいですか。')) return;
+    const btn = $('resetBtn');
+    if (!btn.classList.contains('armed')) {
+      btn.classList.add('armed');
+      btn.textContent = 'もう一度押すと、入力をすべて消します';
+      resetTimer = setTimeout(() => {
+        btn.classList.remove('armed');
+        btn.textContent = 'すべて初期状態に戻す';
+      }, 4000);
+      return;
+    }
+    clearTimeout(resetTimer);
+    btn.classList.remove('armed');
+    btn.textContent = 'すべて初期状態に戻す';
     state = defaults();
     ui.msg = null;
     renderSettings();
