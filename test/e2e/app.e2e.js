@@ -157,6 +157,25 @@ const ok = (name, cond, extra) => {
   ok('ここまでエラーなし', errs.length === 0, errs);
   await ctx.close();
 
+  // ---- 祝日（カレンダーどおり・必要ポイントが多め） ----
+  ({ ctx, pg, errs } = await open());
+  while ((await pg.textContent('#monthLabel')) !== '2026年11月') await pg.click('#nextMonth');
+  const hols = await pg.$$eval('#grid thead th.hol .dayBtn', (e) => e.map((x) => x.textContent.replace(/\s/g, '')));
+  ok('2026年11月の祝日は3日(文化の日)と23日(勤労感謝の日)', JSON.stringify(hols) === JSON.stringify(['3祝', '23祝']), hols);
+  const needs = await pg.$$eval('#grid tfoot tr.needRow input', (e) => e.map((x) => +x.value));
+  const hi = +(await pg.inputValue('#needHigh')), lo = +(await pg.inputValue('#needWeekday'));
+  ok('祝日の必要ポイントは土日と同じ「高め」', needs[2] === hi && needs[22] === hi && needs[6] === hi, { needs, hi });
+  ok('祝日でない平日(11/4)は通常', needs[3] === lo, { needs, lo });
+  ok('希望休の選択肢に月が付かず祝日が分かる', (await pg.$eval('#offRows select', (s) => s.options[3].text)) === '3(火・祝)', await pg.$eval('#offRows select', (s) => s.options[3].text));
+  await pg.click('#grid .dayBtn[data-d="3"]');
+  ok('祝日を通常に切り替えられる', (await pg.$eval('#grid tfoot input[data-d="3"]', (e) => +e.value)) === lo);
+  await pg.click('#grid .dayBtn[data-d="3"]');
+  ok('もう一度押すとカレンダーどおりに戻る', (await pg.$eval('#grid tfoot input[data-d="3"]', (e) => +e.value)) === hi);
+  await pg.click('#solveBtn');
+  await solved(pg);
+  ok('祝日を含む月でも自動作成できる', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  await ctx.close();
+
   // ---- スマホ(タッチ) ----
   ({ ctx, pg, errs } = await open({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true }));
   await pg.tap('#addStaff');

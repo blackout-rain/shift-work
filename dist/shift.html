@@ -72,7 +72,7 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .g td.n span{font-size:11px;color:var(--muted);margin-left:5px}
 .dayBtn{all:unset;box-sizing:border-box;display:block;width:100%;height:100%;padding:4px 0;cursor:pointer}
 .dayBtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.g th.sat{color:var(--sat)} .g th.sun{color:var(--sun)}
+.g th.sat{color:var(--sat)} .g th.sun,.g th.hol{color:var(--sun)}
 .g th.hi{box-shadow:inset 0 3px 0 var(--req)}
 .g td.cell{cursor:pointer;user-select:none}
 .g td.cell:hover{background:var(--sunken)}
@@ -98,26 +98,42 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .sw.r{background:var(--req-soft);border:1px solid var(--req)}
 .sw.v{border:2px solid var(--bad)}
 
-.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:16px;align-items:start}
-details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.settings{display:flex;flex-direction:column;gap:10px}
+details{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px}
 summary{font-weight:700;cursor:pointer}
-details[open] summary{margin-bottom:10px}
-.fields{display:flex;flex-wrap:wrap;gap:12px}
-.fields label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
-.fields input,.staff-row input,.staff-row select{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:5px 8px;min-width:0}
-.fields input{width:9em;font-size:15px}
-.staff-list{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
-.staff-row{display:grid;grid-template-columns:minmax(5em,1fr) 4.5em 7em auto;gap:6px;align-items:center}
-.staff-head{font-size:11.5px;color:var(--muted);letter-spacing:.04em}
-.staff-row .btn{padding:4px 10px;font-size:13px}
+details[open] summary{margin-bottom:8px}
 .note{font-size:12.5px;color:var(--muted);margin:8px 0 0}
-.foot{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.foot{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .foot .note{margin:0}
 
 @media (max-width:520px){
   .actions{margin-left:0}
-  .staff-row{grid-template-columns:minmax(4em,1fr) 4em 6.5em auto}
 }
+
+/* 必要ポイント・スタッフ */
+.need-line{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-bottom:8px;font-size:14px}
+.need-line label{display:inline-flex;align-items:center;gap:6px}
+.need-line input,.staff-row input,.staff-row select,.off-row select{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;font-size:13.5px;min-width:0}
+.need-line input{width:3.6em;text-align:center}
+.staff-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:6px 14px;margin-bottom:8px}
+.staff-row{display:flex;align-items:center;gap:4px}
+.staff-row input[data-f="name"]{flex:1;width:0;min-width:3.5em}
+.staff-row .pt{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--muted)}
+.staff-row .pt input{width:2.8em;text-align:center}
+.staff-row select{width:5.4em}
+.staff-row .x{width:26px;height:26px;padding:0;line-height:1;font-size:16px;color:var(--muted);border:1px solid var(--line);background:var(--surface);border-radius:6px;cursor:pointer}
+.staff-row .x:hover{color:var(--bad);border-color:var(--bad)}
+.staff-actions{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.staff-actions .btn{padding:3px 12px;font-size:13px}
+.note{margin:0}
+/* 希望休の入力 */
+.off-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(316px,1fr));gap:4px 16px}
+.off-row{display:grid;grid-template-columns:4.6em repeat(3,minmax(0,1fr));gap:4px;align-items:center}
+.off-row .who{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.off-row select{width:100%;padding:3px 2px}
+.off-row select.set{background:var(--req-soft);border-color:var(--req);color:var(--req);font-weight:700}
+.off-row .more{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
+@media (max-width:420px){.off-rows{grid-template-columns:minmax(0,1fr)}}
 
 @media print{
   @page{size:A4 landscape;margin:10mm}
@@ -140,20 +156,6 @@ details[open] summary{margin-bottom:10px}
 
 .toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;z-index:10;max-width:90vw}
 .btn.danger.armed{background:var(--bad);border-color:var(--bad);color:var(--surface)}
-
-.wide{grid-column:1/-1}
-.off-rows{display:flex;flex-direction:column;gap:8px}
-.off-row{display:grid;grid-template-columns:7.5em repeat(3,minmax(0,12em));gap:8px;align-items:center}
-.off-row .who{font-weight:500}
-.off-row .who span{font-size:11.5px;color:var(--muted);margin-left:5px}
-.off-row select{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:6px 8px;min-width:0;width:100%}
-.off-row select.set{background:var(--req-soft);border-color:var(--req);color:var(--req);font-weight:700}
-.off-row .more{grid-column:2/-1;font-size:12px;color:var(--muted);margin-top:-4px}
-@media (max-width:640px){
-  .off-row{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .off-row .who{grid-column:1/-1}
-  .off-row .more{grid-column:1/-1}
-}
 </style>
 </head>
 <body>
@@ -184,7 +186,7 @@ details[open] summary{margin-bottom:10px}
       <span><i class="sw w"></i>出勤</span>
       <span><i class="sw r"></i>希望休</span>
       <span><i class="sw v"></i>3連勤</span>
-      <span class="hint">日付をタップすると「土日祝など高め」と「通常」を切り替えます。必要ptの数字は直接書き換えられます。</span>
+      <span class="hint">祝日は自動で判定されます。日付をタップで高め／通常を切り替え、必要ptの数字は直接書き換えられます。</span>
     </div>
   </section>
 
@@ -192,20 +194,20 @@ details[open] summary{margin-bottom:10px}
     <details open class="wide">
       <summary>希望休の入力（<span id="offMonth"></span>）</summary>
       <div id="offRows" class="off-rows"></div>
-      <p class="note">ここでは1人3日まで選べます。選ぶとシフト表の「希」に反映されます。4日以上は、シフト表のセルをタップして入れてください。</p>
+      <p class="note">1人3日まで選べます（4日以上は表のセルをタップ）。</p>
     </details>
-    <details open>
-      <summary>必要ポイント</summary>
-      <div class="fields">
-        <label>平日<input type="number" id="needWeekday" min="0" max="99"></label>
-        <label>土日祝など高めの日<input type="number" id="needHigh" min="0" max="99"></label>
+    <details open class="wide">
+      <summary>必要ポイントとスタッフ</summary>
+      <div class="need-line">
+        <label>平日 <input type="number" id="needWeekday" min="0" max="99"> pt</label>
+        <label>土日祝 <input type="number" id="needHigh" min="0" max="99"> pt</label>
+        <span class="note">祝日はカレンダーどおり。日付をタップすると高め／通常を切り替えます。</span>
       </div>
-    </details>
-    <details open>
-      <summary>スタッフと戦力ポイント</summary>
       <div id="staffList" class="staff-list"></div>
-      <button class="btn" id="addStaff">スタッフを追加</button>
-      <p class="note">「前月末の連勤」は、月の初めの時点で何日続けて出勤していたかです。2日なら1日は必ず休みになります。</p>
+      <div class="staff-actions">
+        <button class="btn" id="addStaff">スタッフを追加</button>
+        <span class="note">「連」は前月末に何日続けて出勤していたか（2日なら月初は休み）。</span>
+      </div>
     </details>
     <div class="foot">
       <button class="btn danger" id="resetBtn">すべて初期状態に戻す</button>
@@ -578,6 +580,82 @@ details[open] summary{margin-bottom:10px}
 });
 </script>
 <script>
+/*
+ * 日本の祝日（国民の祝日に関する法律どおり）。通信は不要で、年から計算する。
+ * 春分・秋分は 1980〜2099 年向けの近似式。振替休日・国民の休日も含む。
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ShiftHolidays = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const cache = {};
+
+  // その月の第n月曜日の日付
+  function nthMonday(y, m, n) {
+    const first = new Date(y, m - 1, 1).getDay();
+    return 1 + ((8 - first) % 7) + (n - 1) * 7;
+  }
+  function equinox(y, base) {
+    return Math.floor(base + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  }
+
+  function build(y) {
+    const h = new Map(); // 'm-d' → 名前
+    const add = (m, d, name) => h.set(m + '-' + d, name);
+
+    add(1, 1, '元日');
+    add(1, nthMonday(y, 1, 2), '成人の日');
+    add(2, 11, '建国記念の日');
+    if (y >= 2020) add(2, 23, '天皇誕生日');
+    add(3, equinox(y, 20.8431), '春分の日');
+    add(4, 29, '昭和の日');
+    add(5, 3, '憲法記念日');
+    add(5, 4, 'みどりの日');
+    add(5, 5, 'こどもの日');
+    // 東京五輪の年だけ、海の日・スポーツの日・山の日が移動した
+    if (y === 2020) { add(7, 23, '海の日'); add(7, 24, 'スポーツの日'); add(8, 10, '山の日'); }
+    else if (y === 2021) { add(7, 22, '海の日'); add(7, 23, 'スポーツの日'); add(8, 8, '山の日'); }
+    else {
+      add(7, nthMonday(y, 7, 3), '海の日');
+      if (y >= 2016) add(8, 11, '山の日');
+      add(10, nthMonday(y, 10, 2), y >= 2020 ? 'スポーツの日' : '体育の日');
+    }
+    add(9, nthMonday(y, 9, 3), '敬老の日');
+    add(9, equinox(y, 23.2488), '秋分の日');
+    add(11, 3, '文化の日');
+    add(11, 23, '勤労感謝の日');
+
+    const key = (dt) => (dt.getMonth() + 1) + '-' + dt.getDate();
+    // 国民の休日: 前日と翌日がどちらも祝日の平日
+    for (let d = new Date(y, 0, 2); d.getFullYear() === y; d.setDate(d.getDate() + 1)) {
+      if (h.has(key(d))) continue;
+      const prev = new Date(y, d.getMonth(), d.getDate() - 1);
+      const next = new Date(y, d.getMonth(), d.getDate() + 1);
+      if (h.has(key(prev)) && h.has(key(next)) && d.getDay() !== 0) h.set(key(d), '国民の休日');
+    }
+    // 振替休日: 祝日が日曜なら、次の祝日でない日
+    for (const k of Array.from(h.keys())) {
+      const [m, d] = k.split('-').map(Number);
+      if (new Date(y, m - 1, d).getDay() !== 0) continue;
+      const sub = new Date(y, m - 1, d + 1);
+      while (h.has(key(sub))) sub.setDate(sub.getDate() + 1);
+      if (sub.getFullYear() === y) h.set(key(sub), '振替休日');
+    }
+    return h;
+  }
+
+  /** 祝日なら名前、そうでなければ null（month は 1〜12） */
+  function holidayName(y, month, day) {
+    if (!cache[y]) cache[y] = build(y);
+    return cache[y].get(month + '-' + day) || null;
+  }
+
+  return { holidayName };
+});
+</script>
+<script>
 (function () {
   'use strict';
 
@@ -636,11 +714,15 @@ details[open] summary{margin-bottom:10px}
   }
 
   /* ---------- 日ごとの設定 ---------- */
+  const holiday = (day) => ShiftHolidays.holidayName(ui.year, ui.month + 1, day);
+  // 土日と祝日（カレンダーどおり）は、必要ポイントが多めの日
+  function defaultHigh(day) {
+    const w = weekday(day);
+    return w === 0 || w === 6 || !!holiday(day);
+  }
   function isHigh(day) {
     const t = md().dayType[day];
-    if (t) return t === 'high';
-    const w = weekday(day);
-    return w === 0 || w === 6;
+    return t ? t === 'high' : defaultHigh(day);
   }
   const defaultNeed = (day) => (isHigh(day) ? state.needHigh : state.needWeekday);
   function needOf(day) {
@@ -684,8 +766,10 @@ details[open] summary{margin-bottom:10px}
     let h = '<table class="g"><thead><tr><th class="n">スタッフ</th>';
     for (let d = 1; d <= D; d++) {
       const w = weekday(d);
-      const cls = (w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '');
-      h += '<th class="' + cls + '"><button class="dayBtn" data-d="' + d + '" title="高め／通常を切り替え">' + d + '<br>' + WD[w] + '</button></th>';
+      const hol = holiday(d);
+      const cls = (hol ? 'hol ' : w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '');
+      const title = (hol ? hol + '（' + WD[w] + '）　' : '') + 'タップで高め／通常を切り替え';
+      h += '<th class="' + cls + '"><button class="dayBtn" data-d="' + d + '" title="' + title + '">' + d + '<br>' + (hol ? '祝' : WD[w]) + '</button></th>';
     }
     h += '<th class="cnt">出勤</th></tr></thead><tbody>';
     state.staff.forEach((s, i) => {
@@ -751,14 +835,14 @@ details[open] summary{margin-bottom:10px}
   let offSig = '';
   function renderOffForm() {
     const D = dayCount();
-    const sig = monthKey() + '|' + state.staff.map((s) => s.id + s.name + s.points).join(',');
+    const sig = monthKey() + '|' + state.staff.map((s) => s.id + s.name).join(',');
     const wrap = $('offRows');
     if (sig !== offSig) {
       offSig = sig;
       const opts = ['<option value="">—</option>'];
-      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + (ui.month + 1) + '/' + d + '（' + WD[weekday(d)] + '）</option>');
+      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + WD[weekday(d)] + (holiday(d) ? '・祝' : '') + ')</option>');
       wrap.innerHTML = state.staff.map((s) =>
-        '<div class="off-row" data-id="' + s.id + '"><div class="who">' + esc(s.name) + '<span>' + s.points + 'pt</span></div>' +
+        '<div class="off-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
         Array.from({ length: OFF_SLOTS }, (_, k) => '<select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>').join('') +
         '<div class="more" hidden></div></div>').join('');
     }
@@ -770,7 +854,7 @@ details[open] summary{margin-bottom:10px}
       });
       const more = row.querySelector('.more');
       more.hidden = days.length <= OFF_SLOTS;
-      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日分はシフト表で入力されています（' + days.slice(OFF_SLOTS).map((d) => (ui.month + 1) + '/' + d).join('、') + '）';
+      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日（表で入力）: ' + days.slice(OFF_SLOTS).join('、') + '日';
     });
     $('offMonth').textContent = (ui.month + 1) + '月';
   }
@@ -782,14 +866,14 @@ details[open] summary{margin-bottom:10px}
   function renderSettings() {
     $('needWeekday').value = state.needWeekday;
     $('needHigh').value = state.needHigh;
-    let h = '<div class="staff-row staff-head"><span>名前</span><span>pt</span><span>前月末の連勤</span><span></span></div>';
+    let h = '';
     state.staff.forEach((s) => {
       h += '<div class="staff-row" data-id="' + s.id + '">' +
         '<input data-f="name" value="' + esc(s.name) + '" aria-label="名前" maxlength="8">' +
-        '<input data-f="points" type="number" min="1" max="9" value="' + s.points + '" aria-label="戦力ポイント">' +
-        '<select data-f="prevStreak" aria-label="前月末の連勤">' +
-        [0, 1, 2].map((v) => '<option value="' + v + '"' + (s.prevStreak === v ? ' selected' : '') + '>' + v + '日</option>').join('') +
-        '</select><button class="btn" data-del="' + s.id + '" aria-label="' + esc(s.name) + 'を削除">削除</button></div>';
+        '<label class="pt"><input data-f="points" type="number" min="1" max="9" value="' + s.points + '" aria-label="戦力ポイント">pt</label>' +
+        '<select data-f="prevStreak" aria-label="前月末の連勤" title="前月末の連勤">' +
+        [0, 1, 2].map((v) => '<option value="' + v + '"' + (s.prevStreak === v ? ' selected' : '') + '>連' + v + '日</option>').join('') +
+        '</select><button class="x" data-del="' + s.id + '" aria-label="' + esc(s.name) + 'を削除" title="削除">×</button></div>';
     });
     $('staffList').innerHTML = h;
     $('addStaff').disabled = state.staff.length >= MAX_UI_STAFF;
@@ -933,9 +1017,7 @@ details[open] summary{margin-bottom:10px}
       const d = +dayBtn.dataset.d;
       const m = md();
       const next = isHigh(d) ? 'normal' : 'high';
-      const w = weekday(d);
-      const isDefault = next === (w === 0 || w === 6 ? 'high' : 'normal');
-      if (isDefault) delete m.dayType[d]; else m.dayType[d] = next;
+      if (next === (defaultHigh(d) ? 'high' : 'normal')) delete m.dayType[d]; else m.dayType[d] = next;
       changed();
     }
   });

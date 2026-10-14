@@ -34,7 +34,7 @@
       <span><i class="sw w"></i>出勤</span>
       <span><i class="sw r"></i>希望休</span>
       <span><i class="sw v"></i>3連勤</span>
-      <span class="hint">日付をタップすると「土日祝など高め」と「通常」を切り替えます。必要ptの数字は直接書き換えられます。</span>
+      <span class="hint">祝日は自動で判定されます。日付をタップで高め／通常を切り替え、必要ptの数字は直接書き換えられます。</span>
     </div>
   </section>
 
@@ -42,20 +42,20 @@
     <details open class="wide">
       <summary>希望休の入力（<span id="offMonth"></span>）</summary>
       <div id="offRows" class="off-rows"></div>
-      <p class="note">ここでは1人3日まで選べます。選ぶとシフト表の「希」に反映されます。4日以上は、シフト表のセルをタップして入れてください。</p>
+      <p class="note">1人3日まで選べます（4日以上は表のセルをタップ）。</p>
     </details>
-    <details open>
-      <summary>必要ポイント</summary>
-      <div class="fields">
-        <label>平日<input type="number" id="needWeekday" min="0" max="99"></label>
-        <label>土日祝など高めの日<input type="number" id="needHigh" min="0" max="99"></label>
+    <details open class="wide">
+      <summary>必要ポイントとスタッフ</summary>
+      <div class="need-line">
+        <label>平日 <input type="number" id="needWeekday" min="0" max="99"> pt</label>
+        <label>土日祝 <input type="number" id="needHigh" min="0" max="99"> pt</label>
+        <span class="note">祝日はカレンダーどおり。日付をタップすると高め／通常を切り替えます。</span>
       </div>
-    </details>
-    <details open>
-      <summary>スタッフと戦力ポイント</summary>
       <div id="staffList" class="staff-list"></div>
-      <button class="btn" id="addStaff">スタッフを追加</button>
-      <p class="note">「前月末の連勤」は、月の初めの時点で何日続けて出勤していたかです。2日なら1日は必ず休みになります。</p>
+      <div class="staff-actions">
+        <button class="btn" id="addStaff">スタッフを追加</button>
+        <span class="note">「連」は前月末に何日続けて出勤していたか（2日なら月初は休み）。</span>
+      </div>
     </details>
     <div class="foot">
       <button class="btn danger" id="resetBtn">すべて初期状態に戻す</button>
@@ -64,6 +64,7 @@
   </section>
 </div>
 <script src="solver.js"></script>
+<script src="holidays.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

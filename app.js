@@ -56,11 +56,15 @@
   }
 
   /* ---------- 日ごとの設定 ---------- */
+  const holiday = (day) => ShiftHolidays.holidayName(ui.year, ui.month + 1, day);
+  // 土日と祝日（カレンダーどおり）は、必要ポイントが多めの日
+  function defaultHigh(day) {
+    const w = weekday(day);
+    return w === 0 || w === 6 || !!holiday(day);
+  }
   function isHigh(day) {
     const t = md().dayType[day];
-    if (t) return t === 'high';
-    const w = weekday(day);
-    return w === 0 || w === 6;
+    return t ? t === 'high' : defaultHigh(day);
   }
   const defaultNeed = (day) => (isHigh(day) ? state.needHigh : state.needWeekday);
   function needOf(day) {
@@ -104,8 +108,10 @@
     let h = '<table class="g"><thead><tr><th class="n">スタッフ</th>';
     for (let d = 1; d <= D; d++) {
       const w = weekday(d);
-      const cls = (w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '');
-      h += '<th class="' + cls + '"><button class="dayBtn" data-d="' + d + '" title="高め／通常を切り替え">' + d + '<br>' + WD[w] + '</button></th>';
+      const hol = holiday(d);
+      const cls = (hol ? 'hol ' : w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '');
+      const title = (hol ? hol + '（' + WD[w] + '）　' : '') + 'タップで高め／通常を切り替え';
+      h += '<th class="' + cls + '"><button class="dayBtn" data-d="' + d + '" title="' + title + '">' + d + '<br>' + (hol ? '祝' : WD[w]) + '</button></th>';
     }
     h += '<th class="cnt">出勤</th></tr></thead><tbody>';
     state.staff.forEach((s, i) => {
@@ -171,14 +177,14 @@
   let offSig = '';
   function renderOffForm() {
     const D = dayCount();
-    const sig = monthKey() + '|' + state.staff.map((s) => s.id + s.name + s.points).join(',');
+    const sig = monthKey() + '|' + state.staff.map((s) => s.id + s.name).join(',');
     const wrap = $('offRows');
     if (sig !== offSig) {
       offSig = sig;
       const opts = ['<option value="">—</option>'];
-      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + (ui.month + 1) + '/' + d + '（' + WD[weekday(d)] + '）</option>');
+      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + WD[weekday(d)] + (holiday(d) ? '・祝' : '') + ')</option>');
       wrap.innerHTML = state.staff.map((s) =>
-        '<div class="off-row" data-id="' + s.id + '"><div class="who">' + esc(s.name) + '<span>' + s.points + 'pt</span></div>' +
+        '<div class="off-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
         Array.from({ length: OFF_SLOTS }, (_, k) => '<select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>').join('') +
         '<div class="more" hidden></div></div>').join('');
     }
@@ -190,7 +196,7 @@
       });
       const more = row.querySelector('.more');
       more.hidden = days.length <= OFF_SLOTS;
-      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日分はシフト表で入力されています（' + days.slice(OFF_SLOTS).map((d) => (ui.month + 1) + '/' + d).join('、') + '）';
+      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日（表で入力）: ' + days.slice(OFF_SLOTS).join('、') + '日';
     });
     $('offMonth').textContent = (ui.month + 1) + '月';
   }
@@ -202,14 +208,14 @@
   function renderSettings() {
     $('needWeekday').value = state.needWeekday;
     $('needHigh').value = state.needHigh;
-    let h = '<div class="staff-row staff-head"><span>名前</span><span>pt</span><span>前月末の連勤</span><span></span></div>';
+    let h = '';
     state.staff.forEach((s) => {
       h += '<div class="staff-row" data-id="' + s.id + '">' +
         '<input data-f="name" value="' + esc(s.name) + '" aria-label="名前" maxlength="8">' +
-        '<input data-f="points" type="number" min="1" max="9" value="' + s.points + '" aria-label="戦力ポイント">' +
-        '<select data-f="prevStreak" aria-label="前月末の連勤">' +
-        [0, 1, 2].map((v) => '<option value="' + v + '"' + (s.prevStreak === v ? ' selected' : '') + '>' + v + '日</option>').join('') +
-        '</select><button class="btn" data-del="' + s.id + '" aria-label="' + esc(s.name) + 'を削除">削除</button></div>';
+        '<label class="pt"><input data-f="points" type="number" min="1" max="9" value="' + s.points + '" aria-label="戦力ポイント">pt</label>' +
+        '<select data-f="prevStreak" aria-label="前月末の連勤" title="前月末の連勤">' +
+        [0, 1, 2].map((v) => '<option value="' + v + '"' + (s.prevStreak === v ? ' selected' : '') + '>連' + v + '日</option>').join('') +
+        '</select><button class="x" data-del="' + s.id + '" aria-label="' + esc(s.name) + 'を削除" title="削除">×</button></div>';
     });
     $('staffList').innerHTML = h;
     $('addStaff').disabled = state.staff.length >= MAX_UI_STAFF;
@@ -353,9 +359,7 @@
       const d = +dayBtn.dataset.d;
       const m = md();
       const next = isHigh(d) ? 'normal' : 'high';
-      const w = weekday(d);
-      const isDefault = next === (w === 0 || w === 6 ? 'high' : 'normal');
-      if (isDefault) delete m.dayType[d]; else m.dayType[d] = next;
+      if (next === (defaultHigh(d) ? 'high' : 'normal')) delete m.dayType[d]; else m.dayType[d] = next;
       changed();
     }
   });
