@@ -138,6 +138,7 @@
     h += '<td></td></tr></tfoot></table>';
     $('grid').innerHTML = h;
     renderBanner(res, made);
+    renderOffForm();
   }
 
   function renderBanner(res, made) {
@@ -164,6 +165,34 @@
       b.className = 'banner ok';
       b.innerHTML = '<span><b>すべての条件を満たしています。</b>余剰ポイントは月合計で' + surplus + 'ptです。</span>';
     }
+  }
+
+  const OFF_SLOTS = 3;
+  let offSig = '';
+  function renderOffForm() {
+    const D = dayCount();
+    const sig = monthKey() + '|' + state.staff.map((s) => s.id + s.name + s.points).join(',');
+    const wrap = $('offRows');
+    if (sig !== offSig) {
+      offSig = sig;
+      const opts = ['<option value="">—</option>'];
+      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + (ui.month + 1) + '/' + d + '（' + WD[weekday(d)] + '）</option>');
+      wrap.innerHTML = state.staff.map((s) =>
+        '<div class="off-row" data-id="' + s.id + '"><div class="who">' + esc(s.name) + '<span>' + s.points + 'pt</span></div>' +
+        Array.from({ length: OFF_SLOTS }, (_, k) => '<select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>').join('') +
+        '<div class="more" hidden></div></div>').join('');
+    }
+    wrap.querySelectorAll('.off-row').forEach((row) => {
+      const days = offDays(row.dataset.id);
+      row.querySelectorAll('select').forEach((sel, k) => {
+        sel.value = days[k] ? String(days[k]) : '';
+        sel.classList.toggle('set', !!days[k]);
+      });
+      const more = row.querySelector('.more');
+      more.hidden = days.length <= OFF_SLOTS;
+      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日分はシフト表で入力されています（' + days.slice(OFF_SLOTS).map((d) => (ui.month + 1) + '/' + d).join('、') + '）';
+    });
+    $('offMonth').textContent = (ui.month + 1) + '月';
   }
 
   function renderMonth() {
@@ -197,16 +226,21 @@
   }
 
   /* ---------- 操作 ---------- */
+  function setOff(id, d, on) {
+    const m = md();
+    m.off[id] = m.off[id] || {};
+    if (on) {
+      m.off[id][d] = 1;
+      if (m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
+    } else delete m.off[id][d];
+  }
+  const offDays = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y);
+
   function toggleCell(i, d) {
     const s = state.staff[i];
     const m = md();
     if (ui.mode === 'off') {
-      m.off[s.id] = m.off[s.id] || {};
-      if (m.off[s.id][d]) delete m.off[s.id][d];
-      else {
-        m.off[s.id][d] = 1;
-        if (m.shifts && m.shifts[s.id]) m.shifts[s.id][d - 1] = 0;
-      }
+      setOff(s.id, d, !(m.off[s.id] && m.off[s.id][d]));
     } else {
       if (m.off[s.id] && m.off[s.id][d]) return;
       if (!m.shifts) setRows(currentRows());
@@ -317,6 +351,16 @@
     const v = inp.value === '' ? NaN : Math.max(0, Math.min(99, Math.round(+inp.value)));
     if (isNaN(v) || v === defaultNeed(d)) delete m.needOv[d];
     else m.needOv[d] = v;
+    changed();
+  });
+
+  $('offRows').addEventListener('change', (e) => {
+    const sel = e.target.closest('select');
+    if (!sel) return;
+    const id = sel.closest('.off-row').dataset.id;
+    const old = offDays(id)[+sel.dataset.slot];
+    if (old) setOff(id, old, false);
+    if (sel.value) setOff(id, +sel.value, true);
     changed();
   });
 
