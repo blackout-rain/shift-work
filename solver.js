@@ -41,7 +41,8 @@
    * 戻り値: { ok:true, rows:number[n][D], cost } または { ok:false, conflict }
    */
   function solve(input, options) {
-    const opts = Object.assign({ tries: 40, starts: 4, iters: 150000, seed: 1 }, options);
+    const startedAt = Date.now();
+    const opts = Object.assign({ tries: 40, starts: 4, iters: 150000, seed: 1, timeBudgetMs: 2500 }, options);
     const { points, need } = input;
     const n = points.length;
     const D = need.length;
@@ -73,6 +74,33 @@
       return r;
     };
 
+    /*
+     * その日の候補は「必要ポイントを満たし、誰か1人を外すと足りなくなる」組み合わせだけで足りる。
+     * 余分な人を足しても余剰ポイントと連勤が増えるだけで、後の日に有利にならないため。
+     */
+    const minimalCache = new Map();
+    function minimalSubsets(d, allowed) {
+      const key = need[d] * 4096 + allowed;
+      let list = minimalCache.get(key);
+      if (list) return list;
+      list = [];
+      for (let sub = allowed; ; sub = (sub - 1) & allowed) {
+        if (psum[sub] >= need[d]) {
+          let minimal = true;
+          for (let b = sub; b; b &= b - 1) {
+            if (psum[sub] - points[31 - Math.clz32(b & -b)] >= need[d]) {
+              minimal = false;
+              break;
+            }
+          }
+          if (minimal) list.push(sub);
+        }
+        if (sub === 0) break;
+      }
+      minimalCache.set(key, list);
+      return list;
+    }
+
     let init = 0;
     for (let i = 0; i < n; i++) init += Math.min(MAX_RUN, Math.max(0, prev[i] | 0)) * pow3[i];
 
@@ -85,12 +113,9 @@
       if (memo[k] >= 0) return memo[k];
       const allowed = allowedMask(d, st);
       let best = INF;
-      for (let sub = allowed; ; sub = (sub - 1) & allowed) {
-        if (psum[sub] >= need[d]) {
-          const rest = minSurplus(d + 1, nextState(st, sub));
-          if (rest < INF) best = Math.min(best, psum[sub] - need[d] + rest);
-        }
-        if (sub === 0) break;
+      for (const sub of minimalSubsets(d, allowed)) {
+        const rest = minSurplus(d + 1, nextState(st, sub));
+        if (rest < INF) best = Math.min(best, psum[sub] - need[d] + rest);
       }
       memo[k] = best;
       return best;
@@ -107,10 +132,7 @@
         for (const st of reach) {
           const allowed = allowedMask(d, st);
           maxPossible = Math.max(maxPossible, psum[allowed]);
-          for (let sub = allowed; ; sub = (sub - 1) & allowed) {
-            if (psum[sub] >= need[d]) next.add(nextState(st, sub));
-            if (sub === 0) break;
-          }
+          for (const sub of minimalSubsets(d, allowed)) next.add(nextState(st, sub));
         }
         if (next.size === 0) {
           const offStaff = [];
@@ -151,21 +173,21 @@
         const hiMean = hiWork.reduce((a, b) => a + b, 0) / n;
         let best = -1;
         let bestScore = Infinity;
-        for (let sub = allowed; ; sub = (sub - 1) & allowed) {
-          if (psum[sub] >= need[d] && feasible(d + 1, nextState(st, sub))) {
-            let score = 10 * (psum[sub] - need[d] + minSurplus(d + 1, nextState(st, sub))) + rng() * noise;
-            for (let i = 0; i < n; i++) {
-              if (sub & (1 << i)) {
-                score += 2 * (work[i] - mean);
-                if (high[d]) score += 2 * (hiWork[i] - hiMean);
-              }
-            }
-            if (score < bestScore) {
-              bestScore = score;
-              best = sub;
+        for (const sub of minimalSubsets(d, allowed)) {
+          const nxt = nextState(st, sub);
+          const rest = minSurplus(d + 1, nxt);
+          if (rest >= INF) continue;
+          let score = 10 * (psum[sub] - need[d] + rest) + rng() * noise;
+          for (let i = 0; i < n; i++) {
+            if (sub & (1 << i)) {
+              score += 2 * (work[i] - mean);
+              if (high[d]) score += 2 * (hiWork[i] - hiMean);
             }
           }
-          if (sub === 0) break;
+          if (score < bestScore) {
+            bestScore = score;
+            best = sub;
+          }
         }
         surplus += psum[best] - need[d];
         for (let i = 0; i < n; i++) {
@@ -226,6 +248,7 @@
       const T0 = 8;
       const T1 = 0.2;
       for (let it = 0; it < iters; it++) {
+        if ((it & 1023) === 0 && Date.now() - startedAt > opts.timeBudgetMs) break;
         const T = T0 * Math.pow(T1 / T0, it / iters);
         const kind = rng();
         let ops;
@@ -277,7 +300,10 @@
 
     const rng = mulberry32(opts.seed);
     const pool = [];
-    for (let t = 0; t < opts.tries; t++) pool.push(build(rng, 2 + rng() * 14));
+    for (let t = 0; t < opts.tries; t++) {
+      if (t > 0 && Date.now() - startedAt > opts.timeBudgetMs / 2) break;
+      pool.push(build(rng, 2 + rng() * 14));
+    }
     pool.sort((a, b) => a.cost - b.cost);
     let best = pool[0];
     for (let k = 0; k < Math.min(opts.starts, pool.length); k++) {

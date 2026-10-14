@@ -250,9 +250,25 @@
     changed();
   }
 
+  // 計算中は表示を切り替え、画面が固まって見えないようにする
   function solve() {
+    const btn = $('solveBtn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '作成中…';
+    setTimeout(() => {
+      try {
+        runSolve();
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '自動作成';
+      }
+    }, 30);
+  }
+
+  function runSolve() {
     const input = buildInput();
-    const r = ShiftSolver.solve(input, { tries: 300, seed: Math.floor(Math.random() * 1e6) });
+    const r = ShiftSolver.solve(input, { seed: Math.floor(Math.random() * 1e6) });
     if (r.ok) {
       setRows(r.rows);
       ui.msg = null;

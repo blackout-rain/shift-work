@@ -14,6 +14,7 @@
 npm run build    # 単体で開ける dist/shift.html を作る（配布用）
 npm start        # http://localhost:8000 を開く（index.html を直接開いても動きます）
 npm test         # 計算部分のテスト
+npm run test:e2e # ブラウザでの操作テスト（要 Playwright。スタッフ追加・希望休・CSV・印刷など）
 ```
 
 1. スタッフと戦力ポイント、必要ポイント（平日／土日祝など高めの日）を設定する

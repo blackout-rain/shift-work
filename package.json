@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "python3 -m http.server 8000",
-    "build": "node scripts/build-single.js"
+    "build": "node scripts/build-single.js",
+    "test:e2e": "node test/e2e/app.e2e.js"
   }
 }

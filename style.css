@@ -118,7 +118,9 @@ details[open] summary{margin-bottom:10px}
   .top .actions,.banner,.legend,.settings,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
   .top{margin-bottom:8px}
   .board{border:0;box-shadow:none}
-  .g th,.g td{border-color:#999;height:26px;color:#000!important;box-shadow:none!important}
+  table.g{border-collapse:collapse;font-size:12px}
+  .g th,.g td{border:1px solid #777;height:30px;color:#000!important;box-shadow:none!important}
+  .g thead th{height:38px}
   .g thead th{background:#eee!important}
   .g thead th.n,.g td.n{position:static;background:#fff!important}
   .g td.w{background:#fff!important;font-weight:700}
