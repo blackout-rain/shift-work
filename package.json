@@ -5,6 +5,7 @@
   "description": "キャリアショップ向けシフト自動作成（ブラウザ完結）",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "start": "python3 -m http.server 8000"
+    "start": "python3 -m http.server 8000",
+    "build": "node scripts/build-single.js"
   }
 }

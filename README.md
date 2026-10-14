@@ -11,6 +11,7 @@
 ## 使い方
 
 ```sh
+npm run build    # 単体で開ける dist/shift.html を作る（配布用）
 npm start        # http://localhost:8000 を開く（index.html を直接開いても動きます）
 npm test         # 計算部分のテスト
 ```
