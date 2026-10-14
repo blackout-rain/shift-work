@@ -71,7 +71,44 @@ test('余剰ポイントは理論上の最小値に一致し、偏りも小さ�
   assert.ok(r.ok);
   const c = check(input, r.rows);
   const surplus = c.diff.reduce((a, v) => a + Math.max(v, 0), 0);
-  assert.strictEqual(surplus, r.optimalSurplus);
+  assert.strictEqual(surplus, r.surplus);
+  assert.strictEqual(r.penalty, r.optimalPenalty);
   const work = r.rows.map((row) => row.reduce((a, b) => a + b, 0));
   assert.ok(Math.max(...work) - Math.min(...work) <= 2);
+});
+
+test('「できれば休み」は組める範囲でなるべく叶える', () => {
+  const input = base();
+  input.soft = points.map(() => new Array(D).fill(false));
+  [[0, 3], [1, 9], [2, 15], [3, 15], [4, 22], [5, 22], [6, 27]].forEach(([i, d]) => (input.soft[i][d] = true));
+  const r = solve(input, { seed: 5 });
+  assert.ok(r.ok);
+  assert.strictEqual(r.missed, 0);
+  const c = check(input, r.rows);
+  assert.strictEqual(c.softCells.size, 0);
+  assert.strictEqual(c.shortDays, 0);
+});
+
+test('「できれば休み」で全員が休みたい日でも必要ポイントは満たす（組めない扱いにしない）', () => {
+  const input = base();
+  input.soft = points.map(() => new Array(D).fill(false));
+  input.soft.forEach((row) => (row[10] = true)); // 全員が11日目に「できれば休み」
+  const r = solve(input, { seed: 5 });
+  assert.ok(r.ok);
+  const c = check(input, r.rows);
+  assert.strictEqual(c.shortDays, 0);
+  assert.ok(r.missed > 0); // 全員は休めない
+  assert.strictEqual(r.penalty, r.optimalPenalty);
+  assert.strictEqual(c.softCells.size, r.missed);
+});
+
+test('絶対の希望休は「できれば」より優先され、必ず守られる', () => {
+  const input = base();
+  input.soft = points.map(() => new Array(D).fill(false));
+  input.off[0][5] = true;
+  input.soft[0][5] = true; // 同じ日に両方 → 絶対が優先
+  const r = solve(input, { seed: 2 });
+  assert.ok(r.ok);
+  assert.strictEqual(r.rows[0][5], 0);
+  assert.strictEqual(check(input, r.rows).offCells.size, 0);
 });

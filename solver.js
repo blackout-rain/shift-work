@@ -3,13 +3,16 @@
  *
  * 条件
  *   - 毎日、出勤者の戦力ポイント合計が必要ポイント以上
- *   - 希望休の日は出勤しない
+ *   - 「絶対」の希望休の日は出勤しない
  *   - 3日連続では出勤しない（2連勤まで）
  *
  * 「何連勤しているか」(0/1/2) を人数分まとめた状態を使い、
  * 最後の日まで条件を満たせるかを厳密に調べる。条件を満たす表が
  * 存在すれば必ず見つかり、存在しなければ最初に破綻する日を返す。
- * 満たす表の中から、余剰ポイントと出勤日数の偏りが小さいものを選ぶ。
+ * 満たす表の中から、次の順に良いものを選ぶ。
+ *   1. 「できれば」の希望休がなるべく叶う（叶わない1日につき SOFT_W）
+ *   2. 余剰ポイントが少ない（1ptにつき SURPLUS_W）
+ *   3. 出勤日数・土日祝の出勤の偏りが小さい
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -19,6 +22,8 @@
 
   const MAX_STAFF = 12;
   const MAX_RUN = 2; // 連続で働ける日数の上限
+  const SURPLUS_W = 10; // 余剰ポイント1ptあたりの重み
+  const SOFT_W = 25; // 「できれば休み」を叶えられなかった1日あたりの重み
 
   function mulberry32(seed) {
     let a = seed | 0;
@@ -35,7 +40,8 @@
    *   points:     number[n]        スタッフごとの戦力ポイント
    *   need:       number[D]        日ごとの必要ポイント
    *   high:       boolean[D]       土日祝など高め設定の日（偏りの計算に使う）
-   *   off:        boolean[n][D]    希望休
+   *   off:        boolean[n][D]    絶対の希望休
+   *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
    * }
    * 戻り値: { ok:true, rows:number[n][D], cost } または { ok:false, conflict }
@@ -50,8 +56,25 @@
     if (n > MAX_STAFF) throw new Error('スタッフは' + MAX_STAFF + '人までです');
 
     const off = input.off || points.map(() => new Array(D).fill(false));
+    const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
+    // その日に「できれば休み」の人（絶対の希望休の人は出勤できないので除く）
+    const softMask = [];
+    for (let d = 0; d < D; d++) {
+      let m = 0;
+      for (let i = 0; i < n; i++) if (soft[i][d] && !off[i][d]) m |= 1 << i;
+      softMask.push(m);
+    }
+    const popcount = (x) => {
+      let c = 0;
+      for (; x; x &= x - 1) c++;
+      return c;
+    };
+    const softMiss = (d, sub) => popcount(sub & softMask[d]);
+    // その日にsubの人が出勤したときの罰点（余剰ポイント＋叶えられない「できれば休み」）
+    const dayPenalty = (d, sub) => SURPLUS_W * (psum[sub] - need[d]) + SOFT_W * softMiss(d, sub);
+
     const pow3 = [1];
     for (let i = 1; i <= n; i++) pow3.push(pow3[i - 1] * 3);
     const S = pow3[n];
@@ -104,23 +127,23 @@
     let init = 0;
     for (let i = 0; i < n; i++) init += Math.min(MAX_RUN, Math.max(0, prev[i] | 0)) * pow3[i];
 
-    // minSurplus(d, st): d日目以降を条件どおり組んだときの余剰ポイント合計の最小値（組めなければ INF）
+    // minPenalty(d, st): d日目以降を条件どおり組んだときの罰点合計の最小値（組めなければ INF）
     const INF = 1e9;
     const memo = new Int32Array((D + 1) * S).fill(-1);
-    function minSurplus(d, st) {
+    function minPenalty(d, st) {
       if (d === D) return 0;
       const k = d * S + st;
       if (memo[k] >= 0) return memo[k];
       const allowed = allowedMask(d, st);
       let best = INF;
       for (const sub of minimalSubsets(d, allowed)) {
-        const rest = minSurplus(d + 1, nextState(st, sub));
-        if (rest < INF) best = Math.min(best, psum[sub] - need[d] + rest);
+        const rest = minPenalty(d + 1, nextState(st, sub));
+        if (rest < INF) best = Math.min(best, dayPenalty(d, sub) + rest);
       }
       memo[k] = best;
       return best;
     }
-    const feasible = (d, st) => minSurplus(d, st) < INF;
+    const feasible = (d, st) => minPenalty(d, st) < INF;
 
     if (!feasible(0, init)) return { ok: false, conflict: diagnose() };
 
@@ -158,8 +181,8 @@
       for (const v of arr) ss += (v - mean) * (v - mean);
       return 2 * (mx - mn) + ss;
     };
-    // 余剰ポイントを最優先し、出勤日数と土日祝出勤の偏りを小さくする
-    const costOf = (surplus, work, hi) => 10 * surplus + 3 * fairness(work) + 3 * fairness(hi);
+    // 「できれば休み」と余剰ポイントを優先し、そのうえで出勤日数と土日祝出勤の偏りを小さくする
+    const costOf = (surplus, missed, work, hi) => SURPLUS_W * surplus + SOFT_W * missed + 3 * fairness(work) + 3 * fairness(hi);
 
     function build(rng, noise) {
       let st = init;
@@ -167,6 +190,7 @@
       const work = new Array(n).fill(0);
       const hiWork = new Array(n).fill(0);
       let surplus = 0;
+      let missed = 0;
       for (let d = 0; d < D; d++) {
         const allowed = allowedMask(d, st);
         const mean = work.reduce((a, b) => a + b, 0) / n;
@@ -175,9 +199,9 @@
         let bestScore = Infinity;
         for (const sub of minimalSubsets(d, allowed)) {
           const nxt = nextState(st, sub);
-          const rest = minSurplus(d + 1, nxt);
+          const rest = minPenalty(d + 1, nxt);
           if (rest >= INF) continue;
-          let score = 10 * (psum[sub] - need[d] + rest) + rng() * noise;
+          let score = dayPenalty(d, sub) + rest + rng() * noise;
           for (let i = 0; i < n; i++) {
             if (sub & (1 << i)) {
               score += 2 * (work[i] - mean);
@@ -190,6 +214,7 @@
           }
         }
         surplus += psum[best] - need[d];
+        missed += softMiss(d, best);
         for (let i = 0; i < n; i++) {
           if (best & (1 << i)) {
             rows[i][d] = 1;
@@ -199,7 +224,7 @@
         }
         st = nextState(st, best);
       }
-      return { rows, surplus, cost: costOf(surplus, work, hiWork) };
+      return { rows, surplus, missed, cost: costOf(surplus, missed, work, hiWork) };
     }
 
     /*
@@ -212,12 +237,14 @@
       const work = new Array(n).fill(0);
       const hi = new Array(n).fill(0);
       let surplus = 0;
+      let missed = 0;
       for (let i = 0; i < n; i++)
         for (let d = 0; d < D; d++)
           if (rows[i][d]) {
             tot[d] += points[i];
             work[i]++;
             if (high[d]) hi[i]++;
+            if (softMask[d] & (1 << i)) missed++;
           }
       for (let d = 0; d < D; d++) surplus += tot[d] - need[d];
 
@@ -227,6 +254,7 @@
         rows[i][d] = v;
         tot[d] += sign * points[i];
         surplus += sign * points[i];
+        if (softMask[d] & (1 << i)) missed += sign;
         work[i] += sign;
         if (high[d]) hi[i] += sign;
       };
@@ -242,7 +270,7 @@
       };
       const ri = (k) => Math.floor(rng() * k);
 
-      let cost = costOf(surplus, work, hi);
+      let cost = costOf(surplus, missed, work, hi);
       let bestCost = cost;
       let bestRows = rows.map((r) => r.slice());
       const T0 = 8;
@@ -276,7 +304,7 @@
         }
         let next = cost;
         if (valid) {
-          next = costOf(surplus, work, hi);
+          next = costOf(surplus, missed, work, hi);
           valid = next <= cost || rng() < Math.exp((cost - next) / T);
         }
         if (!valid) {
@@ -290,12 +318,17 @@
         }
       }
       let bestSurplus = 0;
+      let bestMissed = 0;
       for (let d = 0; d < D; d++) {
         let t = 0;
-        for (let i = 0; i < n; i++) if (bestRows[i][d]) t += points[i];
+        for (let i = 0; i < n; i++)
+          if (bestRows[i][d]) {
+            t += points[i];
+            if (softMask[d] & (1 << i)) bestMissed++;
+          }
         bestSurplus += t - need[d];
       }
-      return { rows: bestRows, cost: bestCost, surplus: bestSurplus };
+      return { rows: bestRows, cost: bestCost, surplus: bestSurplus, missed: bestMissed };
     }
 
     const rng = mulberry32(opts.seed);
@@ -310,7 +343,15 @@
       const cand = anneal(pool[k], rng, opts.iters);
       if (cand.cost < best.cost) best = cand;
     }
-    return { ok: true, rows: best.rows, cost: best.cost, surplus: best.surplus, optimalSurplus: minSurplus(0, init) };
+    return {
+      ok: true,
+      rows: best.rows,
+      cost: best.cost,
+      surplus: best.surplus,
+      missed: best.missed, // 叶えられなかった「できれば休み」の日数
+      penalty: SURPLUS_W * best.surplus + SOFT_W * best.missed,
+      optimalPenalty: minPenalty(0, init), // 余剰ポイントと「できれば休み」だけで見た理論上の最小
+    };
   }
 
   /**
@@ -322,6 +363,7 @@
     const n = points.length;
     const D = need.length;
     const off = input.off || points.map(() => new Array(D).fill(false));
+    const soft = input.soft || points.map(() => new Array(D).fill(false));
     const prev = input.prevStreak || points.map(() => 0);
 
     const total = [];
@@ -354,8 +396,12 @@
     for (let i = 0; i < n; i++)
       for (let d = 0; d < D; d++) if (off[i][d] && rows[i] && rows[i][d]) offCells.add(i + ',' + d);
 
+    const softCells = new Set(); // 「できれば休み」なのに出勤になっているセル（条件違反ではない）
+    for (let i = 0; i < n; i++)
+      for (let d = 0; d < D; d++) if (soft[i][d] && !off[i][d] && rows[i] && rows[i][d]) softCells.add(i + ',' + d);
+
     const shortDays = diff.filter((v) => v < 0).length;
-    return { total, diff, runCells, offCells, shortDays };
+    return { total, diff, runCells, offCells, softCells, shortDays };
   }
 
   return { solve, check, MAX_STAFF, MAX_RUN };

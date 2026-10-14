@@ -78,6 +78,8 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .g td.cell:hover{background:var(--sunken)}
 .g td.w{background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
 .g td.r{background:var(--req-soft);color:var(--req);font-weight:700}
+.g td.s{background:var(--warn-soft);color:var(--warn);font-weight:700}
+.g td.sm{box-shadow:inset 0 0 0 2px var(--warn)}
 .g td.v{box-shadow:inset 0 0 0 2px var(--bad);color:var(--bad)}
 .g td.cnt{color:var(--muted);min-width:44px;border-right:0}
 .g thead th.cnt{border-right:0}
@@ -96,6 +98,8 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
 .sw.w{background:var(--accent-soft);border:1px solid var(--accent)}
 .sw.r{background:var(--req-soft);border:1px solid var(--req)}
+.sw.s{background:var(--warn-soft);border:1px solid var(--warn)}
+.sw.sm{background:var(--accent-soft);border:2px solid var(--warn)}
 .sw.v{border:2px solid var(--bad)}
 
 .settings{display:flex;flex-direction:column;gap:10px}
@@ -126,19 +130,34 @@ details[open] summary{margin-bottom:8px}
 .staff-actions{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
 .staff-actions .btn{padding:3px 12px;font-size:13px}
 .note{margin:0}
-/* 希望休の入力 */
-.off-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(316px,1fr));gap:4px 16px}
-.off-row{display:grid;grid-template-columns:4.6em repeat(3,minmax(0,1fr));gap:4px;align-items:center}
+/* 希望休の入力（1行に3人） */
+.off-rows{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 18px}
+.off-row{display:grid;grid-template-columns:3.4em repeat(3,minmax(0,1fr));gap:4px;align-items:center}
 .off-row .who{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.off-row select{width:100%;padding:3px 2px}
-.off-row select.set{background:var(--req-soft);border-color:var(--req);color:var(--req);font-weight:700}
+.slot{display:flex;min-width:0}
+.slot select{flex:1;min-width:0;width:100%;padding:3px 0 3px 3px;border-radius:6px}
+.slot .kind{flex:none;width:24px;padding:0;font-size:12px;font-weight:700;line-height:1;cursor:pointer;border:1px solid var(--line);border-left:0;background:var(--surface);color:var(--muted);border-radius:0 6px 6px 0}
+.slot .kind[hidden]{display:none}
+.slot.has select{border-radius:6px 0 0 6px}
+.slot.k1 select,.slot.k1 .kind{background:var(--req-soft);border-color:var(--req);color:var(--req);font-weight:700}
+.slot.k2 select,.slot.k2 .kind{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);font-weight:700}
 .off-row .more{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
-@media (max-width:420px){.off-rows{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:1000px){.off-rows{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.off-rows{grid-template-columns:minmax(0,1fr)}}
+
+/* 確認ポップ */
+[hidden]{display:none!important}
+.modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(10,20,22,.5)}
+.modal-box{width:min(100%,380px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:18px 20px;display:flex;flex-direction:column;gap:8px}
+.modal-box h3{margin:0;font-size:16px}
+.modal-box p{margin:0;font-size:13.5px;color:var(--muted)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.btn.solid-danger{background:var(--bad);border-color:var(--bad);color:var(--surface);font-weight:700}
 
 @media print{
   @page{size:A4 landscape;margin:10mm}
   body{background:#fff;color:#000;padding:0}
-  .top .actions,.banner,.legend,.settings,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
+  .top .actions,.banner,.legend,.settings,.modal,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
   .top{margin-bottom:8px}
   .board{border:0;box-shadow:none}
   table.g{border-collapse:collapse;font-size:12px}
@@ -147,7 +166,7 @@ details[open] summary{margin-bottom:8px}
   .g thead th{background:#eee!important}
   .g thead th.n,.g td.n{position:static;background:#fff!important}
   .g td.w{background:#fff!important;font-weight:700}
-  .g td.r{background:#f0f0f0!important}
+  .g td.r,.g td.s{background:#f0f0f0!important}
   .g th.hi{box-shadow:none!important;background:#f6e7e3!important}
   .scr{display:none}
   .prt{display:inline}
@@ -184,9 +203,11 @@ details[open] summary{margin-bottom:8px}
     <div class="scroll" id="grid"></div>
     <div class="legend">
       <span><i class="sw w"></i>出勤</span>
-      <span><i class="sw r"></i>希望休</span>
+      <span><i class="sw r"></i>絶対休み</span>
+      <span><i class="sw s"></i>できれば休み</span>
+      <span><i class="sw sm"></i>できれば休みだが出勤</span>
       <span><i class="sw v"></i>3連勤</span>
-      <span class="hint">祝日は自動で判定されます。日付をタップで高め／通常を切り替え、必要ptの数字は直接書き換えられます。</span>
+      <span class="hint">「希望休を入れる」モードでは、セルをタップするたびに 絶対休み → できれば休み → なし と変わります。</span>
     </div>
   </section>
 
@@ -194,7 +215,7 @@ details[open] summary{margin-bottom:8px}
     <details open class="wide">
       <summary>希望休の入力（<span id="offMonth"></span>）</summary>
       <div id="offRows" class="off-rows"></div>
-      <p class="note">1人3日まで選べます（4日以上は表のセルをタップ）。</p>
+      <p class="note">「絶」は絶対に休み、「△」はできれば休み（ボタンで切り替え）。1人3日まで。4日以上は表のセルをタップ。</p>
     </details>
     <details open class="wide">
       <summary>必要ポイントとスタッフ</summary>
@@ -215,19 +236,32 @@ details[open] summary{margin-bottom:8px}
     </div>
   </section>
 </div>
+<div id="modal" class="modal" hidden>
+  <div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalBody">
+    <h3 id="modalTitle"></h3>
+    <p id="modalBody"></p>
+    <div class="modal-actions">
+      <button class="btn" id="modalCancel">キャンセル</button>
+      <button class="btn solid-danger" id="modalOk">削除する</button>
+    </div>
+  </div>
+</div>
 <script>
 /*
  * シフト自動作成の計算部分（ブラウザでも Node でも動く）
  *
  * 条件
  *   - 毎日、出勤者の戦力ポイント合計が必要ポイント以上
- *   - 希望休の日は出勤しない
+ *   - 「絶対」の希望休の日は出勤しない
  *   - 3日連続では出勤しない（2連勤まで）
  *
  * 「何連勤しているか」(0/1/2) を人数分まとめた状態を使い、
  * 最後の日まで条件を満たせるかを厳密に調べる。条件を満たす表が
  * 存在すれば必ず見つかり、存在しなければ最初に破綻する日を返す。
- * 満たす表の中から、余剰ポイントと出勤日数の偏りが小さいものを選ぶ。
+ * 満たす表の中から、次の順に良いものを選ぶ。
+ *   1. 「できれば」の希望休がなるべく叶う（叶わない1日につき SOFT_W）
+ *   2. 余剰ポイントが少ない（1ptにつき SURPLUS_W）
+ *   3. 出勤日数・土日祝の出勤の偏りが小さい
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -237,6 +271,8 @@ details[open] summary{margin-bottom:8px}
 
   const MAX_STAFF = 12;
   const MAX_RUN = 2; // 連続で働ける日数の上限
+  const SURPLUS_W = 10; // 余剰ポイント1ptあたりの重み
+  const SOFT_W = 25; // 「できれば休み」を叶えられなかった1日あたりの重み
 
   function mulberry32(seed) {
     let a = seed | 0;
@@ -253,7 +289,8 @@ details[open] summary{margin-bottom:8px}
    *   points:     number[n]        スタッフごとの戦力ポイント
    *   need:       number[D]        日ごとの必要ポイント
    *   high:       boolean[D]       土日祝など高め設定の日（偏りの計算に使う）
-   *   off:        boolean[n][D]    希望休
+   *   off:        boolean[n][D]    絶対の希望休
+   *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
    * }
    * 戻り値: { ok:true, rows:number[n][D], cost } または { ok:false, conflict }
@@ -268,8 +305,25 @@ details[open] summary{margin-bottom:8px}
     if (n > MAX_STAFF) throw new Error('スタッフは' + MAX_STAFF + '人までです');
 
     const off = input.off || points.map(() => new Array(D).fill(false));
+    const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
+    // その日に「できれば休み」の人（絶対の希望休の人は出勤できないので除く）
+    const softMask = [];
+    for (let d = 0; d < D; d++) {
+      let m = 0;
+      for (let i = 0; i < n; i++) if (soft[i][d] && !off[i][d]) m |= 1 << i;
+      softMask.push(m);
+    }
+    const popcount = (x) => {
+      let c = 0;
+      for (; x; x &= x - 1) c++;
+      return c;
+    };
+    const softMiss = (d, sub) => popcount(sub & softMask[d]);
+    // その日にsubの人が出勤したときの罰点（余剰ポイント＋叶えられない「できれば休み」）
+    const dayPenalty = (d, sub) => SURPLUS_W * (psum[sub] - need[d]) + SOFT_W * softMiss(d, sub);
+
     const pow3 = [1];
     for (let i = 1; i <= n; i++) pow3.push(pow3[i - 1] * 3);
     const S = pow3[n];
@@ -322,23 +376,23 @@ details[open] summary{margin-bottom:8px}
     let init = 0;
     for (let i = 0; i < n; i++) init += Math.min(MAX_RUN, Math.max(0, prev[i] | 0)) * pow3[i];
 
-    // minSurplus(d, st): d日目以降を条件どおり組んだときの余剰ポイント合計の最小値（組めなければ INF）
+    // minPenalty(d, st): d日目以降を条件どおり組んだときの罰点合計の最小値（組めなければ INF）
     const INF = 1e9;
     const memo = new Int32Array((D + 1) * S).fill(-1);
-    function minSurplus(d, st) {
+    function minPenalty(d, st) {
       if (d === D) return 0;
       const k = d * S + st;
       if (memo[k] >= 0) return memo[k];
       const allowed = allowedMask(d, st);
       let best = INF;
       for (const sub of minimalSubsets(d, allowed)) {
-        const rest = minSurplus(d + 1, nextState(st, sub));
-        if (rest < INF) best = Math.min(best, psum[sub] - need[d] + rest);
+        const rest = minPenalty(d + 1, nextState(st, sub));
+        if (rest < INF) best = Math.min(best, dayPenalty(d, sub) + rest);
       }
       memo[k] = best;
       return best;
     }
-    const feasible = (d, st) => minSurplus(d, st) < INF;
+    const feasible = (d, st) => minPenalty(d, st) < INF;
 
     if (!feasible(0, init)) return { ok: false, conflict: diagnose() };
 
@@ -376,8 +430,8 @@ details[open] summary{margin-bottom:8px}
       for (const v of arr) ss += (v - mean) * (v - mean);
       return 2 * (mx - mn) + ss;
     };
-    // 余剰ポイントを最優先し、出勤日数と土日祝出勤の偏りを小さくする
-    const costOf = (surplus, work, hi) => 10 * surplus + 3 * fairness(work) + 3 * fairness(hi);
+    // 「できれば休み」と余剰ポイントを優先し、そのうえで出勤日数と土日祝出勤の偏りを小さくする
+    const costOf = (surplus, missed, work, hi) => SURPLUS_W * surplus + SOFT_W * missed + 3 * fairness(work) + 3 * fairness(hi);
 
     function build(rng, noise) {
       let st = init;
@@ -385,6 +439,7 @@ details[open] summary{margin-bottom:8px}
       const work = new Array(n).fill(0);
       const hiWork = new Array(n).fill(0);
       let surplus = 0;
+      let missed = 0;
       for (let d = 0; d < D; d++) {
         const allowed = allowedMask(d, st);
         const mean = work.reduce((a, b) => a + b, 0) / n;
@@ -393,9 +448,9 @@ details[open] summary{margin-bottom:8px}
         let bestScore = Infinity;
         for (const sub of minimalSubsets(d, allowed)) {
           const nxt = nextState(st, sub);
-          const rest = minSurplus(d + 1, nxt);
+          const rest = minPenalty(d + 1, nxt);
           if (rest >= INF) continue;
-          let score = 10 * (psum[sub] - need[d] + rest) + rng() * noise;
+          let score = dayPenalty(d, sub) + rest + rng() * noise;
           for (let i = 0; i < n; i++) {
             if (sub & (1 << i)) {
               score += 2 * (work[i] - mean);
@@ -408,6 +463,7 @@ details[open] summary{margin-bottom:8px}
           }
         }
         surplus += psum[best] - need[d];
+        missed += softMiss(d, best);
         for (let i = 0; i < n; i++) {
           if (best & (1 << i)) {
             rows[i][d] = 1;
@@ -417,7 +473,7 @@ details[open] summary{margin-bottom:8px}
         }
         st = nextState(st, best);
       }
-      return { rows, surplus, cost: costOf(surplus, work, hiWork) };
+      return { rows, surplus, missed, cost: costOf(surplus, missed, work, hiWork) };
     }
 
     /*
@@ -430,12 +486,14 @@ details[open] summary{margin-bottom:8px}
       const work = new Array(n).fill(0);
       const hi = new Array(n).fill(0);
       let surplus = 0;
+      let missed = 0;
       for (let i = 0; i < n; i++)
         for (let d = 0; d < D; d++)
           if (rows[i][d]) {
             tot[d] += points[i];
             work[i]++;
             if (high[d]) hi[i]++;
+            if (softMask[d] & (1 << i)) missed++;
           }
       for (let d = 0; d < D; d++) surplus += tot[d] - need[d];
 
@@ -445,6 +503,7 @@ details[open] summary{margin-bottom:8px}
         rows[i][d] = v;
         tot[d] += sign * points[i];
         surplus += sign * points[i];
+        if (softMask[d] & (1 << i)) missed += sign;
         work[i] += sign;
         if (high[d]) hi[i] += sign;
       };
@@ -460,7 +519,7 @@ details[open] summary{margin-bottom:8px}
       };
       const ri = (k) => Math.floor(rng() * k);
 
-      let cost = costOf(surplus, work, hi);
+      let cost = costOf(surplus, missed, work, hi);
       let bestCost = cost;
       let bestRows = rows.map((r) => r.slice());
       const T0 = 8;
@@ -494,7 +553,7 @@ details[open] summary{margin-bottom:8px}
         }
         let next = cost;
         if (valid) {
-          next = costOf(surplus, work, hi);
+          next = costOf(surplus, missed, work, hi);
           valid = next <= cost || rng() < Math.exp((cost - next) / T);
         }
         if (!valid) {
@@ -508,12 +567,17 @@ details[open] summary{margin-bottom:8px}
         }
       }
       let bestSurplus = 0;
+      let bestMissed = 0;
       for (let d = 0; d < D; d++) {
         let t = 0;
-        for (let i = 0; i < n; i++) if (bestRows[i][d]) t += points[i];
+        for (let i = 0; i < n; i++)
+          if (bestRows[i][d]) {
+            t += points[i];
+            if (softMask[d] & (1 << i)) bestMissed++;
+          }
         bestSurplus += t - need[d];
       }
-      return { rows: bestRows, cost: bestCost, surplus: bestSurplus };
+      return { rows: bestRows, cost: bestCost, surplus: bestSurplus, missed: bestMissed };
     }
 
     const rng = mulberry32(opts.seed);
@@ -528,7 +592,15 @@ details[open] summary{margin-bottom:8px}
       const cand = anneal(pool[k], rng, opts.iters);
       if (cand.cost < best.cost) best = cand;
     }
-    return { ok: true, rows: best.rows, cost: best.cost, surplus: best.surplus, optimalSurplus: minSurplus(0, init) };
+    return {
+      ok: true,
+      rows: best.rows,
+      cost: best.cost,
+      surplus: best.surplus,
+      missed: best.missed, // 叶えられなかった「できれば休み」の日数
+      penalty: SURPLUS_W * best.surplus + SOFT_W * best.missed,
+      optimalPenalty: minPenalty(0, init), // 余剰ポイントと「できれば休み」だけで見た理論上の最小
+    };
   }
 
   /**
@@ -540,6 +612,7 @@ details[open] summary{margin-bottom:8px}
     const n = points.length;
     const D = need.length;
     const off = input.off || points.map(() => new Array(D).fill(false));
+    const soft = input.soft || points.map(() => new Array(D).fill(false));
     const prev = input.prevStreak || points.map(() => 0);
 
     const total = [];
@@ -572,8 +645,12 @@ details[open] summary{margin-bottom:8px}
     for (let i = 0; i < n; i++)
       for (let d = 0; d < D; d++) if (off[i][d] && rows[i] && rows[i][d]) offCells.add(i + ',' + d);
 
+    const softCells = new Set(); // 「できれば休み」なのに出勤になっているセル（条件違反ではない）
+    for (let i = 0; i < n; i++)
+      for (let d = 0; d < D; d++) if (soft[i][d] && !off[i][d] && rows[i] && rows[i][d]) softCells.add(i + ',' + d);
+
     const shortDays = diff.filter((v) => v < 0).length;
-    return { total, diff, runCells, offCells, shortDays };
+    return { total, diff, runCells, offCells, softCells, shortDays };
   }
 
   return { solve, check, MAX_STAFF, MAX_RUN };
@@ -730,6 +807,11 @@ details[open] summary{margin-bottom:8px}
     return o === undefined ? defaultNeed(day) : o;
   }
 
+  /* ---------- 希望休（1=絶対休み、2=できれば休み） ---------- */
+  const HARD = 1;
+  const SOFT = 2;
+  const offKind = (id, d) => (md().off[id] && md().off[id][d]) || 0;
+
   /* ---------- 計算エンジンとの受け渡し ---------- */
   function buildInput() {
     const D = dayCount();
@@ -739,7 +821,8 @@ details[open] summary{margin-bottom:8px}
       points: state.staff.map((s) => s.points),
       need: days.map(needOf),
       high: days.map(isHigh),
-      off: state.staff.map((s) => days.map((d) => !!(m.off[s.id] && m.off[s.id][d]))),
+      off: state.staff.map((s) => days.map((d) => offKind(s.id, d) === HARD)),
+      soft: state.staff.map((s) => days.map((d) => offKind(s.id, d) === SOFT)),
       prevStreak: state.staff.map((s) => s.prevStreak || 0),
     };
   }
@@ -776,14 +859,19 @@ details[open] summary{margin-bottom:8px}
       let cnt = 0;
       h += '<tr><td class="n">' + esc(s.name) + '<span>' + s.points + 'pt</span></td>';
       for (let d = 1; d <= D; d++) {
-        const isOff = input.off[i][d - 1];
+        const kind = offKind(s.id, d);
         const works = rows[i][d - 1] === 1;
         if (works) cnt++;
         const bad = res.runCells.has(i + ',' + (d - 1)) || res.offCells.has(i + ',' + (d - 1));
-        const cls = 'cell ' + (isOff ? 'r' : works ? 'w' : '') + (bad ? ' v' : '');
-        const body = isOff ? '<span class="scr">希</span><span class="prt">休</span>'
-          : works ? '出' : '<span class="prt">休</span>';
-        h += '<td class="' + cls + '" data-i="' + i + '" data-d="' + d + '">' + body + '</td>';
+        let cls = 'cell';
+        let body;
+        let title = '';
+        if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
+        else if (kind === SOFT && !works) { cls += ' s'; body = '<span class="scr">△</span><span class="prt">休</span>'; title = 'できれば休み'; }
+        else if (works) { cls += ' w' + (kind === SOFT ? ' sm' : ''); body = '出'; title = kind === SOFT ? 'できれば休みの希望でしたが出勤です' : ''; }
+        else body = '<span class="prt">休</span>';
+        if (bad) cls += ' v';
+        h += '<td class="' + cls + '" data-i="' + i + '" data-d="' + d + '"' + (title ? ' title="' + title + '"' : '') + '>' + body + '</td>';
       }
       h += '<td class="cnt">' + (made ? cnt + '日' : '–') + '</td></tr>';
     });
@@ -827,11 +915,17 @@ details[open] summary{margin-bottom:8px}
       b.innerHTML = parts.join('');
     } else {
       b.className = 'banner ok';
-      b.innerHTML = '<span><b>すべての条件を満たしています。</b>余剰ポイントは月合計で' + surplus + 'ptです。</span>';
+      let softTotal = 0;
+      state.staff.forEach((s) => { for (let d = 1; d <= dayCount(); d++) if (offKind(s.id, d) === SOFT) softTotal++; });
+      b.innerHTML = '<span><b>すべての条件を満たしています。</b>余剰ポイントは月合計で' + surplus + 'ptです。</span>' +
+        (softTotal ? '<span>「できれば休み」' + softTotal + '日のうち、' + (softTotal - res.softCells.size) + '日が叶いました' +
+          (res.softCells.size ? '（叶わなかった日は黄色い枠）' : '') + '。</span>' : '');
     }
   }
 
   const OFF_SLOTS = 3;
+  const KIND_LABEL = { 1: '絶', 2: '△' };
+  const KIND_TITLE = { 1: '絶対に休み（押すと「できれば」に切り替え）', 2: 'できれば休み（押すと「絶対」に切り替え）' };
   let offSig = '';
   function renderOffForm() {
     const D = dayCount();
@@ -840,21 +934,32 @@ details[open] summary{margin-bottom:8px}
     if (sig !== offSig) {
       offSig = sig;
       const opts = ['<option value="">—</option>'];
-      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + WD[weekday(d)] + (holiday(d) ? '・祝' : '') + ')</option>');
+      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')</option>');
       wrap.innerHTML = state.staff.map((s) =>
         '<div class="off-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
-        Array.from({ length: OFF_SLOTS }, (_, k) => '<select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>').join('') +
+        Array.from({ length: OFF_SLOTS }, (_, k) =>
+          '<span class="slot" data-slot="' + k + '"><select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>' +
+          '<button class="kind" data-slot="' + k + '" hidden></button></span>').join('') +
         '<div class="more" hidden></div></div>').join('');
     }
     wrap.querySelectorAll('.off-row').forEach((row) => {
-      const days = offDays(row.dataset.id);
-      row.querySelectorAll('select').forEach((sel, k) => {
-        sel.value = days[k] ? String(days[k]) : '';
-        sel.classList.toggle('set', !!days[k]);
+      const list = offList(row.dataset.id);
+      row.querySelectorAll('.slot').forEach((slot, k) => {
+        const it = list[k];
+        const sel = slot.querySelector('select');
+        const btn = slot.querySelector('.kind');
+        sel.value = it ? String(it.day) : '';
+        slot.className = 'slot' + (it ? ' has k' + it.kind : '');
+        btn.hidden = !it;
+        if (it) {
+          btn.textContent = KIND_LABEL[it.kind];
+          btn.title = KIND_TITLE[it.kind];
+          btn.setAttribute('aria-label', KIND_TITLE[it.kind]);
+        }
       });
       const more = row.querySelector('.more');
-      more.hidden = days.length <= OFF_SLOTS;
-      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日（表で入力）: ' + days.slice(OFF_SLOTS).join('、') + '日';
+      more.hidden = list.length <= OFF_SLOTS;
+      more.textContent = 'ほか' + (list.length - OFF_SLOTS) + '日（表で入力）: ' + list.slice(OFF_SLOTS).map((x) => x.day + (x.kind === SOFT ? '(△)' : '')).join('、') + '日';
     });
     $('offMonth').textContent = (ui.month + 1) + '月';
   }
@@ -890,23 +995,27 @@ details[open] summary{margin-bottom:8px}
   }
 
   /* ---------- 操作 ---------- */
-  function setOff(id, d, on) {
+  // kind: 1=絶対休み 2=できれば休み 0=解除
+  function setOff(id, d, kind) {
     const m = md();
     m.off[id] = m.off[id] || {};
-    if (on) {
-      m.off[id][d] = 1;
-      if (m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
-    } else delete m.off[id][d];
+    if (!kind) delete m.off[id][d];
+    else {
+      m.off[id][d] = kind;
+      if (kind === HARD && m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
+    }
   }
-  const offDays = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y);
+  const offList = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y).map((day) => ({ day, kind: offKind(id, day) }));
 
   function toggleCell(i, d) {
     const s = state.staff[i];
     const m = md();
     if (ui.mode === 'off') {
-      setOff(s.id, d, !(m.off[s.id] && m.off[s.id][d]));
+      // タップするたびに 絶対休み → できれば休み → なし
+      const next = { 0: HARD, [HARD]: SOFT, [SOFT]: 0 }[offKind(s.id, d)];
+      setOff(s.id, d, next);
     } else {
-      if (m.off[s.id] && m.off[s.id][d]) return;
+      if (offKind(s.id, d) === HARD) return;
       if (!m.shifts) setRows(currentRows());
       if (!m.shifts[s.id]) m.shifts[s.id] = new Array(dayCount()).fill(0);
       m.shifts[s.id][d - 1] = m.shifts[s.id][d - 1] ? 0 : 1;
@@ -1036,9 +1145,18 @@ details[open] summary{margin-bottom:8px}
     const sel = e.target.closest('select');
     if (!sel) return;
     const id = sel.closest('.off-row').dataset.id;
-    const old = offDays(id)[+sel.dataset.slot];
-    if (old) setOff(id, old, false);
-    if (sel.value) setOff(id, +sel.value, true);
+    const old = offList(id)[+sel.dataset.slot];
+    if (old) setOff(id, old.day, 0);
+    if (sel.value) setOff(id, +sel.value, old ? old.kind : HARD);
+    changed();
+  });
+  $('offRows').addEventListener('click', (e) => {
+    const btn = e.target.closest('.kind');
+    if (!btn) return;
+    const id = btn.closest('.off-row').dataset.id;
+    const it = offList(id)[+btn.dataset.slot];
+    if (!it) return;
+    setOff(id, it.day, it.kind === HARD ? SOFT : HARD);
     changed();
   });
 
@@ -1082,10 +1200,55 @@ details[open] summary{margin-bottom:8px}
     save();
     renderGrid();
   });
-  $('staffList').addEventListener('click', (e) => {
+  /* ---------- 確認ポップ ---------- */
+  // 確認ポップを出し、「実行する」が押されたら true、それ以外（キャンセル・Esc・外側タップ）は false を返す
+  function ask({ title, body, ok }) {
+    return new Promise((resolve) => {
+      const modal = $('modal');
+      const okBtn = $('modalOk');
+      const cancelBtn = $('modalCancel');
+      const opener = document.activeElement;
+      $('modalTitle').textContent = title;
+      $('modalBody').textContent = body;
+      okBtn.textContent = ok;
+      modal.hidden = false;
+      cancelBtn.focus(); // 誤って実行しないよう、初期フォーカスはキャンセル側
+      const finish = (answer) => {
+        modal.hidden = true;
+        modal.removeEventListener('click', onOverlay);
+        document.removeEventListener('keydown', onKey, true);
+        okBtn.onclick = cancelBtn.onclick = null;
+        if (opener && opener.isConnected) opener.focus();
+        resolve(answer);
+      };
+      const onOverlay = (e) => { if (e.target === modal) finish(false); };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Tab') {
+          // フォーカスをポップの中に閉じ込める
+          e.preventDefault();
+          (document.activeElement === okBtn ? cancelBtn : okBtn).focus();
+        }
+      };
+      okBtn.onclick = () => finish(true);
+      cancelBtn.onclick = () => finish(false);
+      modal.addEventListener('click', onOverlay);
+      document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  $('staffList').addEventListener('click', async (e) => {
     const id = e.target.dataset.del;
-    if (!id || state.staff.length <= 1) return;
-    state.staff = state.staff.filter((s) => s.id !== id);
+    if (!id) return;
+    if (state.staff.length <= 1) return toast('最後の1人は削除できません');
+    const s = state.staff.find((x) => x.id === id);
+    const yes = await ask({
+      title: '「' + s.name + '」を削除しますか？',
+      body: 'この人の希望休とシフトも、すべての月から消えます。元に戻せません。',
+      ok: '削除する',
+    });
+    if (!yes) return;
+    state.staff = state.staff.filter((x) => x.id !== id);
     Object.values(state.months).forEach((m) => {
       delete m.off[id];
       if (m.shifts) delete m.shifts[id];
@@ -1099,21 +1262,13 @@ details[open] summary{margin-bottom:8px}
     renderSettings();
     changed();
   };
-  let resetTimer = null;
-  $('resetBtn').onclick = () => {
-    const btn = $('resetBtn');
-    if (!btn.classList.contains('armed')) {
-      btn.classList.add('armed');
-      btn.textContent = 'もう一度押すと、入力をすべて消します';
-      resetTimer = setTimeout(() => {
-        btn.classList.remove('armed');
-        btn.textContent = 'すべて初期状態に戻す';
-      }, 4000);
-      return;
-    }
-    clearTimeout(resetTimer);
-    btn.classList.remove('armed');
-    btn.textContent = 'すべて初期状態に戻す';
+  $('resetBtn').onclick = async () => {
+    const yes = await ask({
+      title: 'すべて初期状態に戻しますか？',
+      body: 'スタッフ・希望休・作成したシフトなど、入力した内容をすべて消します。元に戻せません。',
+      ok: '初期状態に戻す',
+    });
+    if (!yes) return;
     state = defaults();
     ui.msg = null;
     renderSettings();

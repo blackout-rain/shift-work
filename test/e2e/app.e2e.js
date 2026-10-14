@@ -66,8 +66,18 @@ const ok = (name, cond, extra) => {
   ok('10人の自動作成が3秒以内', ms10 < 3000, ms10);
   console.log('     (10人の自動作成: ' + ms10 + 'ms)');
   ok('10人の自動作成が成功', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  const modalOpen = async () => !(await pg.$eval('#modal', (e) => e.hidden));
   await pg.click('#staffList [data-del]');
-  ok('削除で9人になり追加ボタンが復活', (await staffCount(pg)) === 9 && !(await pg.$eval('#addStaff', (e) => e.disabled)));
+  ok('削除ボタンを押してもすぐには消えず、確認ポップが出る', (await modalOpen()) && (await staffCount(pg)) === 10 && /を削除しますか/.test(await pg.textContent('#modalTitle')), await pg.textContent('#modalTitle'));
+  ok('確認ポップの初期フォーカスはキャンセル側', await pg.$eval('#modalCancel', (e) => e === document.activeElement));
+  await pg.click('#modalCancel');
+  ok('キャンセルすると削除されない', !(await modalOpen()) && (await staffCount(pg)) === 10);
+  await pg.click('#staffList [data-del]');
+  await pg.keyboard.press('Escape');
+  ok('Escでも削除されずに閉じる', !(await modalOpen()) && (await staffCount(pg)) === 10);
+  await pg.click('#staffList [data-del]');
+  await pg.click('#modalOk');
+  ok('確認後に削除すると9人になり追加ボタンが復活', !(await modalOpen()) && (await staffCount(pg)) === 9 && !(await pg.$eval('#addStaff', (e) => e.disabled)));
 
   // ---- 必要ポイントの設定 ----
   await pg.fill('#needWeekday', '5');
@@ -95,6 +105,38 @@ const ok = (name, cond, extra) => {
   await pg.click('#solveBtn');
   await solved(pg);
   ok('希望休を守って作成', (await pg.$eval('#grid tbody tr:first-child td[data-d="12"]', (e) => !e.classList.contains('w'))));
+
+  // ---- 希望休の入力欄は1行に3人 ----
+  const tops = await pg.$$eval('#offRows .off-row', (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
+  ok('希望休の入力欄は1行に3人並ぶ', tops[0] === tops[1] && tops[1] === tops[2] && tops[3] > tops[2], tops);
+
+  // ---- 「絶対」と「できれば」 ----
+  const idS = await pg.$eval('#offRows .off-row:nth-child(3)', (e) => e.dataset.id);
+  await pg.selectOption(`#offRows [data-id="${idS}"] select[data-slot="0"]`, '15');
+  ok('日付を選ぶと初期は「絶」', (await pg.textContent(`#offRows [data-id="${idS}"] .kind[data-slot="0"]`)) === '絶');
+  await pg.click(`#offRows [data-id="${idS}"] .kind[data-slot="0"]`);
+  ok('ボタンで「△(できれば)」に切り替わる', (await pg.textContent(`#offRows [data-id="${idS}"] .kind[data-slot="0"]`)) === '△' && (await pg.$eval(`#offRows [data-id="${idS}"] .slot[data-slot="0"]`, (e) => e.classList.contains('k2'))));
+  const softCell = '#grid tbody tr:nth-child(3) td[data-d="15"]';
+  ok('表では「できれば休み」の見た目になる', await pg.$eval(softCell, (e) => e.classList.contains('s') || e.classList.contains('sm')));
+  await pg.click('#solveBtn');
+  await solved(pg);
+  ok('組める範囲で「できれば休み」が叶う(休みになる)', await pg.$eval(softCell, (e) => e.classList.contains('s') && !e.classList.contains('w')), await pg.$eval(softCell, (e) => e.className));
+  ok('「できれば休み」は叶っても条件を満たす表', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  // 表のタップ: 絶対 → できれば → なし
+  const tap = '#grid tbody tr:nth-child(5) td[data-d="20"]';
+  const kindOf = () => pg.$eval(tap, (e) => (e.classList.contains('r') ? 'hard' : e.classList.contains('s') || e.classList.contains('sm') ? 'soft' : 'none'));
+  const seq = [];
+  for (let k = 0; k < 3; k++) { await pg.click(tap); seq.push(await kindOf()); }
+  ok('表のタップで 絶対 → できれば → なし と変わる', seq.join() === 'hard,soft,none', seq);
+  // 全員ができれば休みでも組める
+  for (let k = 0; k < 9; k++) {
+    const c = `#grid tbody tr:nth-child(${k + 1}) td[data-d="25"]`;
+    await pg.click(c); await pg.click(c);
+  }
+  await pg.click('#solveBtn');
+  await solved(pg);
+  ok('全員が「できれば休み」の日があっても自動作成できる', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  ok('叶わなかった「できれば休み」は出勤のまま黄色い枠で示される', (await pg.$$eval('#grid td.sm', (e) => e.length)) > 0);
 
   // ---- 出勤を直す ----
   await pg.click('#modeWork');
@@ -150,8 +192,11 @@ const ok = (name, cond, extra) => {
 
   // ---- リセット ----
   await pg.click('#resetBtn');
-  ok('リセットは1回目では消えない(確認表示)', (await staffCount(pg)) === 9 && /もう一度/.test(await pg.textContent('#resetBtn')));
+  ok('リセットは確認ポップが出て、キャンセルなら消えない', (await modalOpen()) && (await staffCount(pg)) === 9);
+  await pg.click('#modalCancel');
+  ok('キャンセル後もスタッフは9人のまま', !(await modalOpen()) && (await staffCount(pg)) === 9);
   await pg.click('#resetBtn');
+  await pg.click('#modalOk');
   await solved(pg);
   ok('リセット2回目で初期状態(7人)に戻る', (await staffCount(pg)) === 7);
   ok('ここまでエラーなし', errs.length === 0, errs);
@@ -166,7 +211,7 @@ const ok = (name, cond, extra) => {
   const hi = +(await pg.inputValue('#needHigh')), lo = +(await pg.inputValue('#needWeekday'));
   ok('祝日の必要ポイントは土日と同じ「高め」', needs[2] === hi && needs[22] === hi && needs[6] === hi, { needs, hi });
   ok('祝日でない平日(11/4)は通常', needs[3] === lo, { needs, lo });
-  ok('希望休の選択肢に月が付かず祝日が分かる', (await pg.$eval('#offRows select', (s) => s.options[3].text)) === '3(火・祝)', await pg.$eval('#offRows select', (s) => s.options[3].text));
+  ok('希望休の選択肢に月が付かず、祝日は「祝」と分かる', (await pg.$eval('#offRows select', (s) => s.options[3].text)) === '3(祝)', await pg.$eval('#offRows select', (s) => s.options[3].text));
   await pg.click('#grid .dayBtn[data-d="3"]');
   ok('祝日を通常に切り替えられる', (await pg.$eval('#grid tfoot input[data-d="3"]', (e) => +e.value)) === lo);
   await pg.click('#grid .dayBtn[data-d="3"]');

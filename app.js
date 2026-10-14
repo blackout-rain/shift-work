@@ -72,6 +72,11 @@
     return o === undefined ? defaultNeed(day) : o;
   }
 
+  /* ---------- 希望休（1=絶対休み、2=できれば休み） ---------- */
+  const HARD = 1;
+  const SOFT = 2;
+  const offKind = (id, d) => (md().off[id] && md().off[id][d]) || 0;
+
   /* ---------- 計算エンジンとの受け渡し ---------- */
   function buildInput() {
     const D = dayCount();
@@ -81,7 +86,8 @@
       points: state.staff.map((s) => s.points),
       need: days.map(needOf),
       high: days.map(isHigh),
-      off: state.staff.map((s) => days.map((d) => !!(m.off[s.id] && m.off[s.id][d]))),
+      off: state.staff.map((s) => days.map((d) => offKind(s.id, d) === HARD)),
+      soft: state.staff.map((s) => days.map((d) => offKind(s.id, d) === SOFT)),
       prevStreak: state.staff.map((s) => s.prevStreak || 0),
     };
   }
@@ -118,14 +124,19 @@
       let cnt = 0;
       h += '<tr><td class="n">' + esc(s.name) + '<span>' + s.points + 'pt</span></td>';
       for (let d = 1; d <= D; d++) {
-        const isOff = input.off[i][d - 1];
+        const kind = offKind(s.id, d);
         const works = rows[i][d - 1] === 1;
         if (works) cnt++;
         const bad = res.runCells.has(i + ',' + (d - 1)) || res.offCells.has(i + ',' + (d - 1));
-        const cls = 'cell ' + (isOff ? 'r' : works ? 'w' : '') + (bad ? ' v' : '');
-        const body = isOff ? '<span class="scr">希</span><span class="prt">休</span>'
-          : works ? '出' : '<span class="prt">休</span>';
-        h += '<td class="' + cls + '" data-i="' + i + '" data-d="' + d + '">' + body + '</td>';
+        let cls = 'cell';
+        let body;
+        let title = '';
+        if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
+        else if (kind === SOFT && !works) { cls += ' s'; body = '<span class="scr">△</span><span class="prt">休</span>'; title = 'できれば休み'; }
+        else if (works) { cls += ' w' + (kind === SOFT ? ' sm' : ''); body = '出'; title = kind === SOFT ? 'できれば休みの希望でしたが出勤です' : ''; }
+        else body = '<span class="prt">休</span>';
+        if (bad) cls += ' v';
+        h += '<td class="' + cls + '" data-i="' + i + '" data-d="' + d + '"' + (title ? ' title="' + title + '"' : '') + '>' + body + '</td>';
       }
       h += '<td class="cnt">' + (made ? cnt + '日' : '–') + '</td></tr>';
     });
@@ -169,11 +180,17 @@
       b.innerHTML = parts.join('');
     } else {
       b.className = 'banner ok';
-      b.innerHTML = '<span><b>すべての条件を満たしています。</b>余剰ポイントは月合計で' + surplus + 'ptです。</span>';
+      let softTotal = 0;
+      state.staff.forEach((s) => { for (let d = 1; d <= dayCount(); d++) if (offKind(s.id, d) === SOFT) softTotal++; });
+      b.innerHTML = '<span><b>すべての条件を満たしています。</b>余剰ポイントは月合計で' + surplus + 'ptです。</span>' +
+        (softTotal ? '<span>「できれば休み」' + softTotal + '日のうち、' + (softTotal - res.softCells.size) + '日が叶いました' +
+          (res.softCells.size ? '（叶わなかった日は黄色い枠）' : '') + '。</span>' : '');
     }
   }
 
   const OFF_SLOTS = 3;
+  const KIND_LABEL = { 1: '絶', 2: '△' };
+  const KIND_TITLE = { 1: '絶対に休み（押すと「できれば」に切り替え）', 2: 'できれば休み（押すと「絶対」に切り替え）' };
   let offSig = '';
   function renderOffForm() {
     const D = dayCount();
@@ -182,21 +199,32 @@
     if (sig !== offSig) {
       offSig = sig;
       const opts = ['<option value="">—</option>'];
-      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + WD[weekday(d)] + (holiday(d) ? '・祝' : '') + ')</option>');
+      for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')</option>');
       wrap.innerHTML = state.staff.map((s) =>
         '<div class="off-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
-        Array.from({ length: OFF_SLOTS }, (_, k) => '<select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>').join('') +
+        Array.from({ length: OFF_SLOTS }, (_, k) =>
+          '<span class="slot" data-slot="' + k + '"><select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>' +
+          '<button class="kind" data-slot="' + k + '" hidden></button></span>').join('') +
         '<div class="more" hidden></div></div>').join('');
     }
     wrap.querySelectorAll('.off-row').forEach((row) => {
-      const days = offDays(row.dataset.id);
-      row.querySelectorAll('select').forEach((sel, k) => {
-        sel.value = days[k] ? String(days[k]) : '';
-        sel.classList.toggle('set', !!days[k]);
+      const list = offList(row.dataset.id);
+      row.querySelectorAll('.slot').forEach((slot, k) => {
+        const it = list[k];
+        const sel = slot.querySelector('select');
+        const btn = slot.querySelector('.kind');
+        sel.value = it ? String(it.day) : '';
+        slot.className = 'slot' + (it ? ' has k' + it.kind : '');
+        btn.hidden = !it;
+        if (it) {
+          btn.textContent = KIND_LABEL[it.kind];
+          btn.title = KIND_TITLE[it.kind];
+          btn.setAttribute('aria-label', KIND_TITLE[it.kind]);
+        }
       });
       const more = row.querySelector('.more');
-      more.hidden = days.length <= OFF_SLOTS;
-      more.textContent = 'ほか' + (days.length - OFF_SLOTS) + '日（表で入力）: ' + days.slice(OFF_SLOTS).join('、') + '日';
+      more.hidden = list.length <= OFF_SLOTS;
+      more.textContent = 'ほか' + (list.length - OFF_SLOTS) + '日（表で入力）: ' + list.slice(OFF_SLOTS).map((x) => x.day + (x.kind === SOFT ? '(△)' : '')).join('、') + '日';
     });
     $('offMonth').textContent = (ui.month + 1) + '月';
   }
@@ -232,23 +260,27 @@
   }
 
   /* ---------- 操作 ---------- */
-  function setOff(id, d, on) {
+  // kind: 1=絶対休み 2=できれば休み 0=解除
+  function setOff(id, d, kind) {
     const m = md();
     m.off[id] = m.off[id] || {};
-    if (on) {
-      m.off[id][d] = 1;
-      if (m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
-    } else delete m.off[id][d];
+    if (!kind) delete m.off[id][d];
+    else {
+      m.off[id][d] = kind;
+      if (kind === HARD && m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
+    }
   }
-  const offDays = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y);
+  const offList = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y).map((day) => ({ day, kind: offKind(id, day) }));
 
   function toggleCell(i, d) {
     const s = state.staff[i];
     const m = md();
     if (ui.mode === 'off') {
-      setOff(s.id, d, !(m.off[s.id] && m.off[s.id][d]));
+      // タップするたびに 絶対休み → できれば休み → なし
+      const next = { 0: HARD, [HARD]: SOFT, [SOFT]: 0 }[offKind(s.id, d)];
+      setOff(s.id, d, next);
     } else {
-      if (m.off[s.id] && m.off[s.id][d]) return;
+      if (offKind(s.id, d) === HARD) return;
       if (!m.shifts) setRows(currentRows());
       if (!m.shifts[s.id]) m.shifts[s.id] = new Array(dayCount()).fill(0);
       m.shifts[s.id][d - 1] = m.shifts[s.id][d - 1] ? 0 : 1;
@@ -378,9 +410,18 @@
     const sel = e.target.closest('select');
     if (!sel) return;
     const id = sel.closest('.off-row').dataset.id;
-    const old = offDays(id)[+sel.dataset.slot];
-    if (old) setOff(id, old, false);
-    if (sel.value) setOff(id, +sel.value, true);
+    const old = offList(id)[+sel.dataset.slot];
+    if (old) setOff(id, old.day, 0);
+    if (sel.value) setOff(id, +sel.value, old ? old.kind : HARD);
+    changed();
+  });
+  $('offRows').addEventListener('click', (e) => {
+    const btn = e.target.closest('.kind');
+    if (!btn) return;
+    const id = btn.closest('.off-row').dataset.id;
+    const it = offList(id)[+btn.dataset.slot];
+    if (!it) return;
+    setOff(id, it.day, it.kind === HARD ? SOFT : HARD);
     changed();
   });
 
@@ -424,10 +465,55 @@
     save();
     renderGrid();
   });
-  $('staffList').addEventListener('click', (e) => {
+  /* ---------- 確認ポップ ---------- */
+  // 確認ポップを出し、「実行する」が押されたら true、それ以外（キャンセル・Esc・外側タップ）は false を返す
+  function ask({ title, body, ok }) {
+    return new Promise((resolve) => {
+      const modal = $('modal');
+      const okBtn = $('modalOk');
+      const cancelBtn = $('modalCancel');
+      const opener = document.activeElement;
+      $('modalTitle').textContent = title;
+      $('modalBody').textContent = body;
+      okBtn.textContent = ok;
+      modal.hidden = false;
+      cancelBtn.focus(); // 誤って実行しないよう、初期フォーカスはキャンセル側
+      const finish = (answer) => {
+        modal.hidden = true;
+        modal.removeEventListener('click', onOverlay);
+        document.removeEventListener('keydown', onKey, true);
+        okBtn.onclick = cancelBtn.onclick = null;
+        if (opener && opener.isConnected) opener.focus();
+        resolve(answer);
+      };
+      const onOverlay = (e) => { if (e.target === modal) finish(false); };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        else if (e.key === 'Tab') {
+          // フォーカスをポップの中に閉じ込める
+          e.preventDefault();
+          (document.activeElement === okBtn ? cancelBtn : okBtn).focus();
+        }
+      };
+      okBtn.onclick = () => finish(true);
+      cancelBtn.onclick = () => finish(false);
+      modal.addEventListener('click', onOverlay);
+      document.addEventListener('keydown', onKey, true);
+    });
+  }
+
+  $('staffList').addEventListener('click', async (e) => {
     const id = e.target.dataset.del;
-    if (!id || state.staff.length <= 1) return;
-    state.staff = state.staff.filter((s) => s.id !== id);
+    if (!id) return;
+    if (state.staff.length <= 1) return toast('最後の1人は削除できません');
+    const s = state.staff.find((x) => x.id === id);
+    const yes = await ask({
+      title: '「' + s.name + '」を削除しますか？',
+      body: 'この人の希望休とシフトも、すべての月から消えます。元に戻せません。',
+      ok: '削除する',
+    });
+    if (!yes) return;
+    state.staff = state.staff.filter((x) => x.id !== id);
     Object.values(state.months).forEach((m) => {
       delete m.off[id];
       if (m.shifts) delete m.shifts[id];
@@ -441,21 +527,13 @@
     renderSettings();
     changed();
   };
-  let resetTimer = null;
-  $('resetBtn').onclick = () => {
-    const btn = $('resetBtn');
-    if (!btn.classList.contains('armed')) {
-      btn.classList.add('armed');
-      btn.textContent = 'もう一度押すと、入力をすべて消します';
-      resetTimer = setTimeout(() => {
-        btn.classList.remove('armed');
-        btn.textContent = 'すべて初期状態に戻す';
-      }, 4000);
-      return;
-    }
-    clearTimeout(resetTimer);
-    btn.classList.remove('armed');
-    btn.textContent = 'すべて初期状態に戻す';
+  $('resetBtn').onclick = async () => {
+    const yes = await ask({
+      title: 'すべて初期状態に戻しますか？',
+      body: 'スタッフ・希望休・作成したシフトなど、入力した内容をすべて消します。元に戻せません。',
+      ok: '初期状態に戻す',
+    });
+    if (!yes) return;
     state = defaults();
     ui.msg = null;
     renderSettings();
