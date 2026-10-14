@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>シフト自動作成</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>シフト自動作成</h1>
+    <div class="month">
+      <button class="btn icon" id="prevMonth" aria-label="前の月">‹</button>
+      <strong id="monthLabel"></strong>
+      <button class="btn icon" id="nextMonth" aria-label="次の月">›</button>
+    </div>
+    <div class="actions">
+      <div class="seg" role="group" aria-label="入力モード">
+        <button class="on" id="modeOff" aria-pressed="true">希望休を入れる</button>
+        <button id="modeWork" aria-pressed="false">出勤を直す</button>
+      </div>
+      <button class="btn main" id="solveBtn">自動作成</button>
+      <button class="btn" id="csvBtn">CSV</button>
+      <button class="btn" id="printBtn">印刷</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="status"></div>
+
+  <section class="board" aria-label="シフト表">
+    <div class="scroll" id="grid"></div>
+    <div class="legend">
+      <span><i class="sw w"></i>出勤</span>
+      <span><i class="sw r"></i>希望休</span>
+      <span><i class="sw v"></i>3連勤</span>
+      <span class="hint">日付をタップすると「土日祝など高め」と「通常」を切り替えます。必要ptの数字は直接書き換えられます。</span>
+    </div>
+  </section>
+
+  <section class="settings">
+    <details open>
+      <summary>必要ポイント</summary>
+      <div class="fields">
+        <label>平日<input type="number" id="needWeekday" min="0" max="99"></label>
+        <label>土日祝など高めの日<input type="number" id="needHigh" min="0" max="99"></label>
+      </div>
+    </details>
+    <details open>
+      <summary>スタッフと戦力ポイント</summary>
+      <div id="staffList" class="staff-list"></div>
+      <button class="btn" id="addStaff">スタッフを追加</button>
+      <p class="note">「前月末の連勤」は、月の初めの時点で何日続けて出勤していたかです。2日なら1日は必ず休みになります。</p>
+    </details>
+    <div class="foot">
+      <button class="btn danger" id="resetBtn">すべて初期状態に戻す</button>
+      <span class="note">入力内容はこのブラウザにだけ保存されます。</span>
+    </div>
+  </section>
+</div>
+<script src="solver.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

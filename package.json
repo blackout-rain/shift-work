@@ -1,0 +1,10 @@
+{
+  "name": "shift-work",
+  "version": "0.1.0",
+  "private": true,
+  "description": "キャリアショップ向けシフト自動作成（ブラウザ完結）",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "python3 -m http.server 8000"
+  }
+}
