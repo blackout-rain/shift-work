@@ -62,3 +62,16 @@ test('check は手で直した表の3連勤・不足・希望休違反を検出�
   assert.ok(c.offCells.has('0,1'));
   assert.ok(c.shortDays > 0);
 });
+
+test('余剰ポイントは理論上の最小値に一致し、偏りも小さい', () => {
+  const input = base();
+  [[0, 4], [1, 5], [1, 6], [2, 12], [3, 12], [4, 20], [5, 8], [6, 8]].forEach(([i, d]) => (input.off[i][d] = true));
+  input.need = input.need.map((v) => v - 1); // 少し余裕のある設定
+  const r = solve(input, { seed: 3 });
+  assert.ok(r.ok);
+  const c = check(input, r.rows);
+  const surplus = c.diff.reduce((a, v) => a + Math.max(v, 0), 0);
+  assert.strictEqual(surplus, r.optimalSurplus);
+  const work = r.rows.map((row) => row.reduce((a, b) => a + b, 0));
+  assert.ok(Math.max(...work) - Math.min(...work) <= 2);
+});

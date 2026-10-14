@@ -41,7 +41,7 @@
    * 戻り値: { ok:true, rows:number[n][D], cost } または { ok:false, conflict }
    */
   function solve(input, options) {
-    const opts = Object.assign({ tries: 300, seed: 1 }, options);
+    const opts = Object.assign({ tries: 40, starts: 4, iters: 150000, seed: 1 }, options);
     const { points, need } = input;
     const n = points.length;
     const D = need.length;
@@ -76,24 +76,26 @@
     let init = 0;
     for (let i = 0; i < n; i++) init += Math.min(MAX_RUN, Math.max(0, prev[i] | 0)) * pow3[i];
 
-    // memo: 0=未計算 1=最後まで続けられる 2=行き止まり
-    const memo = new Uint8Array((D + 1) * S);
-    function feasible(d, st) {
-      if (d === D) return true;
+    // minSurplus(d, st): d日目以降を条件どおり組んだときの余剰ポイント合計の最小値（組めなければ INF）
+    const INF = 1e9;
+    const memo = new Int32Array((D + 1) * S).fill(-1);
+    function minSurplus(d, st) {
+      if (d === D) return 0;
       const k = d * S + st;
-      if (memo[k]) return memo[k] === 1;
+      if (memo[k] >= 0) return memo[k];
       const allowed = allowedMask(d, st);
-      let ok = false;
+      let best = INF;
       for (let sub = allowed; ; sub = (sub - 1) & allowed) {
-        if (psum[sub] >= need[d] && feasible(d + 1, nextState(st, sub))) {
-          ok = true;
-          break;
+        if (psum[sub] >= need[d]) {
+          const rest = minSurplus(d + 1, nextState(st, sub));
+          if (rest < INF) best = Math.min(best, psum[sub] - need[d] + rest);
         }
         if (sub === 0) break;
       }
-      memo[k] = ok ? 1 : 2;
-      return ok;
+      memo[k] = best;
+      return best;
     }
+    const feasible = (d, st) => minSurplus(d, st) < INF;
 
     if (!feasible(0, init)) return { ok: false, conflict: diagnose() };
 
@@ -120,6 +122,23 @@
       return { reason: 'unknown' };
     }
 
+    const fairness = (arr) => {
+      let mx = -Infinity;
+      let mn = Infinity;
+      let sum = 0;
+      for (const v of arr) {
+        if (v > mx) mx = v;
+        if (v < mn) mn = v;
+        sum += v;
+      }
+      const mean = sum / arr.length;
+      let ss = 0;
+      for (const v of arr) ss += (v - mean) * (v - mean);
+      return 2 * (mx - mn) + ss;
+    };
+    // 余剰ポイントを最優先し、出勤日数と土日祝出勤の偏りを小さくする
+    const costOf = (surplus, work, hi) => 10 * surplus + 3 * fairness(work) + 3 * fairness(hi);
+
     function build(rng, noise) {
       let st = init;
       const rows = points.map(() => new Array(D).fill(0));
@@ -134,7 +153,7 @@
         let bestScore = Infinity;
         for (let sub = allowed; ; sub = (sub - 1) & allowed) {
           if (psum[sub] >= need[d] && feasible(d + 1, nextState(st, sub))) {
-            let score = 10 * (psum[sub] - need[d]) + rng() * noise;
+            let score = 10 * (psum[sub] - need[d] + minSurplus(d + 1, nextState(st, sub))) + rng() * noise;
             for (let i = 0; i < n; i++) {
               if (sub & (1 << i)) {
                 score += 2 * (work[i] - mean);
@@ -158,17 +177,114 @@
         }
         st = nextState(st, best);
       }
-      const spread = (a) => Math.max(...a) - Math.min(...a);
-      return { rows, cost: 10 * surplus + 6 * spread(work) + 4 * spread(hiWork), surplus };
+      return { rows, surplus, cost: costOf(surplus, work, hiWork) };
+    }
+
+    /*
+     * 条件を保ったまま少しずつ入れ替えて、出勤日数と土日祝の出勤の偏りを減らす。
+     * 変更のたびに「必要ポイント」「希望休」「3連勤」を確かめ、破るものは取り消す。
+     */
+    function anneal(start, rng, iters) {
+      const rows = start.rows.map((r) => r.slice());
+      const tot = new Int32Array(D);
+      const work = new Array(n).fill(0);
+      const hi = new Array(n).fill(0);
+      let surplus = 0;
+      for (let i = 0; i < n; i++)
+        for (let d = 0; d < D; d++)
+          if (rows[i][d]) {
+            tot[d] += points[i];
+            work[i]++;
+            if (high[d]) hi[i]++;
+          }
+      for (let d = 0; d < D; d++) surplus += tot[d] - need[d];
+
+      const setCell = (i, d, v) => {
+        if (rows[i][d] === v) return;
+        const sign = v ? 1 : -1;
+        rows[i][d] = v;
+        tot[d] += sign * points[i];
+        surplus += sign * points[i];
+        work[i] += sign;
+        if (high[d]) hi[i] += sign;
+      };
+      const lineOk = (i) => {
+        let run = Math.min(MAX_RUN, Math.max(0, prev[i] | 0));
+        const r = rows[i];
+        for (let d = 0; d < D; d++) {
+          if (r[d]) {
+            if (off[i][d] || ++run > MAX_RUN) return false;
+          } else run = 0;
+        }
+        return true;
+      };
+      const ri = (k) => Math.floor(rng() * k);
+
+      let cost = costOf(surplus, work, hi);
+      let bestCost = cost;
+      let bestRows = rows.map((r) => r.slice());
+      const T0 = 8;
+      const T1 = 0.2;
+      for (let it = 0; it < iters; it++) {
+        const T = T0 * Math.pow(T1 / T0, it / iters);
+        const kind = rng();
+        let ops;
+        if (kind < 0.45) {
+          // 同じ日の担当を入れ替える
+          const d = ri(D), i = ri(n), j = ri(n);
+          if (rows[i][d] !== 1 || rows[j][d] !== 0) continue;
+          ops = [[i, d, 0], [j, d, 1]];
+        } else if (kind < 0.85) {
+          // 同じ人の出勤日を動かす
+          const i = ri(n), d1 = ri(D), d2 = ri(D);
+          if (rows[i][d1] !== 1 || rows[i][d2] !== 0) continue;
+          ops = [[i, d1, 0], [i, d2, 1]];
+        } else {
+          // 2人の出勤日を入れ替える
+          const i = ri(n), j = ri(n), d1 = ri(D), d2 = ri(D);
+          if (i === j || rows[i][d1] !== 1 || rows[i][d2] !== 0 || rows[j][d1] !== 0 || rows[j][d2] !== 1) continue;
+          ops = [[i, d1, 0], [j, d1, 1], [i, d2, 1], [j, d2, 0]];
+        }
+        const old = ops.map(([i, d]) => rows[i][d]);
+        ops.forEach(([i, d, v]) => setCell(i, d, v));
+        let valid = true;
+        for (const [i, d] of ops) {
+          if (tot[d] < need[d] || !lineOk(i)) { valid = false; break; }
+        }
+        let next = cost;
+        if (valid) {
+          next = costOf(surplus, work, hi);
+          valid = next <= cost || rng() < Math.exp((cost - next) / T);
+        }
+        if (!valid) {
+          for (let k = ops.length - 1; k >= 0; k--) setCell(ops[k][0], ops[k][1], old[k]);
+          continue;
+        }
+        cost = next;
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestRows = rows.map((r) => r.slice());
+        }
+      }
+      let bestSurplus = 0;
+      for (let d = 0; d < D; d++) {
+        let t = 0;
+        for (let i = 0; i < n; i++) if (bestRows[i][d]) t += points[i];
+        bestSurplus += t - need[d];
+      }
+      return { rows: bestRows, cost: bestCost, surplus: bestSurplus };
     }
 
     const rng = mulberry32(opts.seed);
-    let best = null;
-    for (let t = 0; t < opts.tries; t++) {
-      const cand = build(rng, 2 + rng() * 14);
-      if (!best || cand.cost < best.cost) best = cand;
+    const pool = [];
+    for (let t = 0; t < opts.tries; t++) pool.push(build(rng, 2 + rng() * 14));
+    pool.sort((a, b) => a.cost - b.cost);
+    let best = pool[0];
+    for (let k = 0; k < Math.min(opts.starts, pool.length); k++) {
+      const cand = anneal(pool[k], rng, opts.iters);
+      if (cand.cost < best.cost) best = cand;
     }
-    return { ok: true, rows: best.rows, cost: best.cost, surplus: best.surplus };
+    return { ok: true, rows: best.rows, cost: best.cost, surplus: best.surplus, optimalSurplus: minSurplus(0, init) };
   }
 
   /**
