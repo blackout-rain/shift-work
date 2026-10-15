@@ -16,6 +16,22 @@ const ok = (name, cond, extra) => {
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }).catch(() => chromium.launch());
 
+  // 希望休の選択欄で、日付と曜日の表示が切れていないか（最長の選択肢が欄に収まるか）
+  const offTextFits = (pg) => pg.$$eval('#offRows select', (sels) => {
+    const cv = document.createElement('canvas').getContext('2d');
+    const bad = [];
+    sels.forEach((s) => {
+      const cs = getComputedStyle(s);
+      cv.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      // 標準の矢印が付く欄は、矢印の分(約20px)が文字に重なる。環境ごとの字幅の差にも備えて余裕(6px)を見る
+      const arrow = cs.appearance === 'none' || cs.webkitAppearance === 'none' ? 0 : 20;
+      const avail = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - arrow;
+      const widest = Math.max(...Array.from(s.options).map((o) => cv.measureText(o.text).width));
+      if (widest + 6 > avail) bad.push({ avail: Math.round(avail), widest: Math.round(widest) });
+    });
+    return bad.length ? bad.slice(0, 3) : null;
+  });
+
   // 自動作成が終わる（ボタンが元に戻る）まで待つ
   const solved = (pg) => pg.waitForFunction(() => !document.getElementById('solveBtn').disabled);
 
@@ -109,6 +125,8 @@ const ok = (name, cond, extra) => {
   // ---- 希望休の入力欄は1行に3人 ----
   const tops = await pg.$$eval('#offRows .off-row', (e) => e.map((x) => Math.round(x.getBoundingClientRect().top)));
   ok('希望休の入力欄は1行に3人並ぶ', tops[0] === tops[1] && tops[1] === tops[2] && tops[3] > tops[2], tops);
+
+  ok('希望休の日付と曜日が切れずに全部見える(幅1100px)', (await offTextFits(pg)) === null, await offTextFits(pg));
 
   // ---- 「絶対」と「できれば」 ----
   const idS = await pg.$eval('#offRows .off-row:nth-child(3)', (e) => e.dataset.id);
@@ -221,12 +239,20 @@ const ok = (name, cond, extra) => {
   ok('祝日を含む月でも自動作成できる', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
   await ctx.close();
 
+  // ---- 希望休の表示が切れない(画面幅ごと) ----
+  for (const w of [1280, 900, 700]) {
+    ({ ctx, pg, errs } = await open({ viewport: { width: w, height: 900 } }));
+    ok('希望休の日付と曜日が切れずに全部見える(幅' + w + 'px)', (await offTextFits(pg)) === null, await offTextFits(pg));
+    await ctx.close();
+  }
+
   // ---- スマホ(タッチ) ----
   ({ ctx, pg, errs } = await open({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true }));
   await pg.tap('#addStaff');
   ok('スマホでスタッフ追加をタップできる', (await staffCount(pg)) === 8);
   await pg.tap('#grid tbody tr:first-child td[data-d="5"]');
   ok('スマホで表のセルをタップできる', await pg.$eval('#grid tbody tr:first-child td[data-d="5"]', (e) => e.classList.contains('r')));
+  ok('スマホでも希望休の日付と曜日が全部見える', (await offTextFits(pg)) === null, await offTextFits(pg));
   ok('スマホで横にはみ出さない', (await pg.evaluate('document.documentElement.scrollWidth')) <= 390);
   ok('スマホでエラーなし', errs.length === 0, errs);
   await ctx.close();
