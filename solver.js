@@ -43,6 +43,8 @@
    *   off:        boolean[n][D]    絶対の希望休
    *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
+   *   workBase:   number[n]        すでに出勤した日数（任意。偏りの計算に足す。solveFrom が使う）
+   *   highBase:   number[n]        すでに出勤した高め設定の日数（任意）
    * }
    * 戻り値: { ok:true, rows:number[n][D], cost } または { ok:false, conflict }
    */
@@ -59,6 +61,8 @@
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
+    const workBase = input.workBase || points.map(() => 0);
+    const highBase = input.highBase || points.map(() => 0);
     // その日に「できれば休み」の人（絶対の希望休の人は出勤できないので除く）
     const softMask = [];
     for (let d = 0; d < D; d++) {
@@ -187,8 +191,8 @@
     function build(rng, noise) {
       let st = init;
       const rows = points.map(() => new Array(D).fill(0));
-      const work = new Array(n).fill(0);
-      const hiWork = new Array(n).fill(0);
+      const work = workBase.slice();
+      const hiWork = highBase.slice();
       let surplus = 0;
       let missed = 0;
       for (let d = 0; d < D; d++) {
@@ -234,8 +238,8 @@
     function anneal(start, rng, iters) {
       const rows = start.rows.map((r) => r.slice());
       const tot = new Int32Array(D);
-      const work = new Array(n).fill(0);
-      const hi = new Array(n).fill(0);
+      const work = workBase.slice();
+      const hi = highBase.slice();
       let surplus = 0;
       let missed = 0;
       for (let i = 0; i < n; i++)
@@ -355,6 +359,55 @@
   }
 
   /**
+   * 途中から作り直す。from 日目（0始まり）より前は rows のまま動かさず、from 日目以降だけを組み直す。
+   * 固定した部分の末尾の連勤は引き継ぎ、すでに出勤した日数は偏りの計算に入れる。
+   * 戻り値は solve と同じ。rows は月全体、conflict.day も月全体の日（0始まり）。
+   */
+  function solveFrom(input, rows, from, options) {
+    const D = input.need.length;
+    if (from <= 0) return solve(input, options);
+    const n = input.points.length;
+    if (from >= D) return { ok: true, rows: rows.map((r) => r.slice()) };
+    const high = input.high || input.need.map(() => false);
+    const prev0 = input.prevStreak || input.points.map(() => 0);
+    const prevStreak = [];
+    const workBase = [];
+    const highBase = [];
+    for (let i = 0; i < n; i++) {
+      let run = prev0[i] | 0;
+      let work = 0;
+      let hi = 0;
+      for (let d = 0; d < from; d++) {
+        run = rows[i][d] ? run + 1 : 0;
+        if (rows[i][d]) {
+          work++;
+          if (high[d]) hi++;
+        }
+      }
+      prevStreak.push(Math.min(MAX_RUN, run));
+      workBase.push(work);
+      highBase.push(hi);
+    }
+    const tail = (a) => a.slice(from);
+    const sub = {
+      points: input.points,
+      need: tail(input.need),
+      high: tail(high),
+      off: input.off && input.off.map(tail),
+      soft: input.soft && input.soft.map(tail),
+      prevStreak,
+      workBase,
+      highBase,
+    };
+    const r = solve(sub, options);
+    if (!r.ok) {
+      const c = r.conflict;
+      return { ok: false, conflict: c.day === undefined ? c : Object.assign({}, c, { day: c.day + from }) };
+    }
+    return Object.assign({}, r, { rows: rows.map((row, i) => row.slice(0, from).concat(r.rows[i])) });
+  }
+
+  /**
    * 出来上がった（または手で直した）表が条件を満たしているか調べる。
    * rows: number[n][D]（1=出勤）
    */
@@ -404,5 +457,5 @@
     return { total, diff, runCells, offCells, softCells, shortDays };
   }
 
-  return { solve, check, MAX_STAFF, MAX_RUN };
+  return { solve, solveFrom, check, MAX_STAFF, MAX_RUN };
 });

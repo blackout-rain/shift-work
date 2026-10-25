@@ -50,6 +50,9 @@ h1{font-size:20px;margin:0;font-weight:700}
 .btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 14px;font-weight:500;cursor:pointer;font-size:14px}
 .btn:hover{border-color:var(--accent)}
 .btn.main{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700}
+.from{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.from select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:14px;color:var(--ink)}
+.from select:disabled{opacity:.5}
 .btn.icon{width:34px;padding:4px 0;font-size:18px;line-height:1}
 .btn.danger{color:var(--bad)}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
@@ -76,6 +79,7 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .g th.hi{box-shadow:inset 0 3px 0 var(--req)}
 .g td.cell{cursor:pointer;user-select:none}
 .g td.cell:hover{background:var(--sunken)}
+.g th.lk,.g td.lk{opacity:.5}
 .g td.w{background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
 .g td.r{background:var(--req-soft);color:var(--req);font-weight:700}
 .g td.s{background:var(--warn-soft);color:var(--warn);font-weight:700}
@@ -176,6 +180,7 @@ details[open] summary{margin-bottom:8px}
   .scr{display:none}
   .prt{display:inline}
   .g td.n span{display:none}
+  .g th.lk,.g td.lk{opacity:1}
 }
 
 .toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:14px;z-index:10;max-width:90vw}
@@ -196,6 +201,7 @@ details[open] summary{margin-bottom:8px}
         <button class="on" id="modeOff" aria-pressed="true">希望休を入れる</button>
         <button id="modeWork" aria-pressed="false">出勤を直す</button>
       </div>
+      <label class="from"><span>作成する範囲</span><select id="fromDay" aria-label="何日から作り直すか"></select></label>
       <button class="btn main" id="solveBtn">自動作成</button>
       <button class="btn" id="excelBtn">Excel</button>
       <button class="btn" id="printBtn">印刷</button>
@@ -297,6 +303,8 @@ details[open] summary{margin-bottom:8px}
    *   off:        boolean[n][D]    絶対の希望休
    *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
+   *   workBase:   number[n]        すでに出勤した日数（任意。偏りの計算に足す。solveFrom が使う）
+   *   highBase:   number[n]        すでに出勤した高め設定の日数（任意）
    * }
    * 戻り値: { ok:true, rows:number[n][D], cost } または { ok:false, conflict }
    */
@@ -313,6 +321,8 @@ details[open] summary{margin-bottom:8px}
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
+    const workBase = input.workBase || points.map(() => 0);
+    const highBase = input.highBase || points.map(() => 0);
     // その日に「できれば休み」の人（絶対の希望休の人は出勤できないので除く）
     const softMask = [];
     for (let d = 0; d < D; d++) {
@@ -441,8 +451,8 @@ details[open] summary{margin-bottom:8px}
     function build(rng, noise) {
       let st = init;
       const rows = points.map(() => new Array(D).fill(0));
-      const work = new Array(n).fill(0);
-      const hiWork = new Array(n).fill(0);
+      const work = workBase.slice();
+      const hiWork = highBase.slice();
       let surplus = 0;
       let missed = 0;
       for (let d = 0; d < D; d++) {
@@ -488,8 +498,8 @@ details[open] summary{margin-bottom:8px}
     function anneal(start, rng, iters) {
       const rows = start.rows.map((r) => r.slice());
       const tot = new Int32Array(D);
-      const work = new Array(n).fill(0);
-      const hi = new Array(n).fill(0);
+      const work = workBase.slice();
+      const hi = highBase.slice();
       let surplus = 0;
       let missed = 0;
       for (let i = 0; i < n; i++)
@@ -609,6 +619,55 @@ details[open] summary{margin-bottom:8px}
   }
 
   /**
+   * 途中から作り直す。from 日目（0始まり）より前は rows のまま動かさず、from 日目以降だけを組み直す。
+   * 固定した部分の末尾の連勤は引き継ぎ、すでに出勤した日数は偏りの計算に入れる。
+   * 戻り値は solve と同じ。rows は月全体、conflict.day も月全体の日（0始まり）。
+   */
+  function solveFrom(input, rows, from, options) {
+    const D = input.need.length;
+    if (from <= 0) return solve(input, options);
+    const n = input.points.length;
+    if (from >= D) return { ok: true, rows: rows.map((r) => r.slice()) };
+    const high = input.high || input.need.map(() => false);
+    const prev0 = input.prevStreak || input.points.map(() => 0);
+    const prevStreak = [];
+    const workBase = [];
+    const highBase = [];
+    for (let i = 0; i < n; i++) {
+      let run = prev0[i] | 0;
+      let work = 0;
+      let hi = 0;
+      for (let d = 0; d < from; d++) {
+        run = rows[i][d] ? run + 1 : 0;
+        if (rows[i][d]) {
+          work++;
+          if (high[d]) hi++;
+        }
+      }
+      prevStreak.push(Math.min(MAX_RUN, run));
+      workBase.push(work);
+      highBase.push(hi);
+    }
+    const tail = (a) => a.slice(from);
+    const sub = {
+      points: input.points,
+      need: tail(input.need),
+      high: tail(high),
+      off: input.off && input.off.map(tail),
+      soft: input.soft && input.soft.map(tail),
+      prevStreak,
+      workBase,
+      highBase,
+    };
+    const r = solve(sub, options);
+    if (!r.ok) {
+      const c = r.conflict;
+      return { ok: false, conflict: c.day === undefined ? c : Object.assign({}, c, { day: c.day + from }) };
+    }
+    return Object.assign({}, r, { rows: rows.map((row, i) => row.slice(0, from).concat(r.rows[i])) });
+  }
+
+  /**
    * 出来上がった（または手で直した）表が条件を満たしているか調べる。
    * rows: number[n][D]（1=出勤）
    */
@@ -658,7 +717,7 @@ details[open] summary{margin-bottom:8px}
     return { total, diff, runCells, offCells, softCells, shortDays };
   }
 
-  return { solve, check, MAX_STAFF, MAX_RUN };
+  return { solve, solveFrom, check, MAX_STAFF, MAX_RUN };
 });
 </script>
 <script>
@@ -994,7 +1053,7 @@ details[open] summary{margin-bottom:8px}
   }
 
   const now = new Date();
-  const ui = { year: now.getFullYear(), month: now.getMonth(), mode: 'off', msg: null };
+  const ui = { year: now.getFullYear(), month: now.getMonth(), mode: 'off', msg: null, fromDay: 1 };
 
   const monthKey = () => ui.year + '-' + pad(ui.month + 1);
   const dayCount = () => new Date(ui.year, ui.month + 1, 0).getDate();
@@ -1060,12 +1119,14 @@ details[open] summary{margin-bottom:8px}
     const made = !!m.shifts;
     const rows = currentRows();
     const res = ShiftSolver.check(input, rows);
+    const from = fromDay(); // この日より前は作り直しで変わらない（表では薄く表示）
+    const lk = (d) => (d < from ? ' lk' : '');
 
     let h = '<table class="g"><thead><tr><th class="n">スタッフ</th>';
     for (let d = 1; d <= D; d++) {
       const w = weekday(d);
       const hol = holiday(d);
-      const cls = (hol ? 'hol ' : w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '');
+      const cls = (hol ? 'hol ' : w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '') + lk(d);
       const title = (hol ? hol + '（' + WD[w] + '）　' : '') + 'タップで高め／通常を切り替え';
       h += '<th class="' + cls + '"><button class="dayBtn" data-d="' + d + '" title="' + title + '">' + d + '<br>' + (hol ? '祝' : WD[w]) + '</button></th>';
     }
@@ -1078,7 +1139,7 @@ details[open] summary{margin-bottom:8px}
         const works = rows[i][d - 1] === 1;
         if (works) cnt++;
         const bad = res.runCells.has(i + ',' + (d - 1)) || res.offCells.has(i + ',' + (d - 1));
-        let cls = 'cell';
+        let cls = 'cell' + lk(d);
         let body;
         let title = '';
         if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
@@ -1106,6 +1167,26 @@ details[open] summary{margin-bottom:8px}
     $('grid').innerHTML = h;
     renderBanner(res, made);
     renderOffForm();
+    renderFromDay(made);
+  }
+
+  // 作り直す開始日。まだ表を作っていない月は、最初から全部作るので選べない
+  const fromDay = () => (md().shifts ? Math.min(Math.max(ui.fromDay, 1), dayCount()) : 1);
+  let fromSig = '';
+  function renderFromDay(made) {
+    const sel = $('fromDay');
+    const sig = monthKey();
+    if (sig !== fromSig) {
+      fromSig = sig;
+      let o = '';
+      for (let d = 1; d <= dayCount(); d++) o += '<option value="' + d + '">' + d + '日(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')から' + (d === 1 ? '（全部）' : '') + '</option>';
+      sel.innerHTML = o;
+    }
+    sel.disabled = !made;
+    sel.title = made ? 'この日より前は今の表のまま残し、この日以降だけを作り直します' : '先に一度「自動作成」すると、途中から作り直せます';
+    sel.value = String(fromDay());
+    const btn = $('solveBtn');
+    if (!btn.disabled) btn.textContent = fromDay() > 1 ? fromDay() + '日以降を作り直す' : '自動作成';
   }
 
   function renderBanner(res, made) {
@@ -1249,19 +1330,23 @@ details[open] summary{margin-bottom:8px}
         runSolve();
       } finally {
         btn.disabled = false;
-        btn.textContent = '自動作成';
+        renderFromDay(!!md().shifts);
       }
     }, 30);
   }
 
   function runSolve() {
+    if (!md().shifts) ui.fromDay = 1; // 初めて作るときは必ず月初から（リセット後に前の開始日が残らないように）
     const input = buildInput();
-    const r = ShiftSolver.solve(input, { seed: Math.floor(Math.random() * 1e6) });
+    const from = fromDay() - 1;
+    const opts = { seed: Math.floor(Math.random() * 1e6) };
+    const r = from > 0 ? ShiftSolver.solveFrom(input, currentRows(), from, opts) : ShiftSolver.solve(input, opts);
     if (r.ok) {
       setRows(r.rows);
       ui.msg = null;
       save();
       renderGrid();
+      if (from > 0) toast((from + 1) + '日以降を作り直しました。' + from + '日までは変わっていません');
       return;
     }
     const c = r.conflict;
@@ -1337,6 +1422,7 @@ details[open] summary{margin-bottom:8px}
     ui.year = d.getFullYear();
     ui.month = d.getMonth();
     ui.msg = null;
+    ui.fromDay = 1;
     renderAll();
   }
 
@@ -1386,6 +1472,10 @@ details[open] summary{margin-bottom:8px}
   $('prevMonth').onclick = () => shiftMonth(-1);
   $('nextMonth').onclick = () => shiftMonth(1);
   $('solveBtn').onclick = solve;
+  $('fromDay').onchange = (e) => {
+    ui.fromDay = +e.target.value;
+    renderGrid();
+  };
   $('excelBtn').onclick = exportExcel;
   if (sandboxed) {
     $('excelBtn').textContent = '表をコピー';

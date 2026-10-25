@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { solve, check } = require('../solver.js');
+const { solve, solveFrom, check } = require('../solver.js');
 
 const points = [3, 3, 2, 2, 2, 1, 1];
 const D = 30;
@@ -111,4 +111,71 @@ test('絶対の希望休は「できれば」より優先され、必ず守ら�
   assert.ok(r.ok);
   assert.strictEqual(r.rows[0][5], 0);
   assert.strictEqual(check(input, r.rows).offCells.size, 0);
+});
+
+/* ---- 途中から作り直す ---- */
+test('途中から作り直しても、それより前の日は1マスも変わらない', () => {
+  const input = base();
+  const first = solve(input, { seed: 3 });
+  assert.ok(first.ok);
+  const from = 12;
+  const r = solveFrom(input, first.rows, from, { seed: 99 });
+  assert.ok(r.ok);
+  r.rows.forEach((row, i) => assert.deepStrictEqual(row.slice(0, from), first.rows[i].slice(0, from)));
+  const c = check(input, r.rows);
+  assert.strictEqual(c.shortDays, 0);
+  assert.strictEqual(c.runCells.size, 0);
+  assert.strictEqual(c.offCells.size, 0);
+});
+
+test('途中から作り直すと、変更した希望休が反映され、境目の連勤も守る', () => {
+  const input = base();
+  const first = solve(input, { seed: 3 });
+  const from = 15;
+  // 固定部分の末尾で2連勤している人を作り、その翌日(from)は必ず休みになることを見る
+  const rows = first.rows.map((r) => r.slice());
+  rows[0][from - 1] = 1;
+  rows[0][from - 2] = 1;
+  rows[0][from - 3] = 0; // 固定部分の中で3連勤にならないようにする
+  input.off[1][20] = true; // 後から入った希望休
+  input.off[1][from + 2] = true;
+  const r = solveFrom(input, rows, from, { seed: 5 });
+  assert.ok(r.ok);
+  assert.strictEqual(r.rows[0][from], 0, '2連勤の翌日は休み');
+  assert.strictEqual(r.rows[1][20], 0);
+  assert.strictEqual(r.rows[1][from + 2], 0);
+  assert.strictEqual(check(input, r.rows).runCells.size, 0);
+});
+
+test('前月末の連勤も、固定部分がずっと出勤なら途中から作り直しても引き継がれる', () => {
+  const input = base();
+  input.prevStreak = [1, 0, 0, 0, 0, 0, 0];
+  const rows = points.map(() => new Array(D).fill(0));
+  rows[0][0] = 1; // 前月末1日＋1日目で2連勤
+  const r = solveFrom(input, rows, 1, { seed: 1 });
+  assert.ok(r.ok);
+  assert.strictEqual(r.rows[0][1], 0);
+});
+
+test('途中から組めない場合は、月全体での日付(0始まり)で破綻日を返す', () => {
+  const input = base();
+  const first = solve(input, { seed: 3 });
+  [1, 2, 3, 4].forEach((i) => (input.off[i][20] = true)); // 20日目に3ptの1人しか出られない
+  const r = solveFrom(input, first.rows, 10, { seed: 3 });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.conflict.reason, 'short');
+  assert.strictEqual(r.conflict.day, 20);
+});
+
+test('固定した部分で多く出ている人は、作り直す部分では出勤が少なめになる', () => {
+  const input = base();
+  const from = 15;
+  const rows = points.map(() => new Array(D).fill(0));
+  for (let d = 0; d < from; d += 2) rows[4][d] = 1; // 伊藤(4)だけ前半に8日出勤済み
+  const tail = (a) => a.slice(from);
+  const plain = solve({ ...input, need: tail(input.need), high: tail(input.high), off: input.off.map(tail) }, { seed: 2 });
+  const withBase = solveFrom(input, rows, from, { seed: 2 });
+  assert.ok(plain.ok && withBase.ok);
+  const sum = (a) => a.reduce((x, y) => x + y, 0);
+  assert.ok(sum(tail(withBase.rows[4])) < sum(plain.rows[4]) - 2, '前半で出た分、後半はかなり少なくなる');
 });
