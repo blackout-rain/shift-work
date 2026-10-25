@@ -330,25 +330,32 @@
     renderGrid();
   }
 
-  function exportCsv() {
+  // 画面の表（スタッフ名・出勤・出勤日数）と同じ内容。戦力ポイントは含めない
+  function sheetData() {
     const D = dayCount();
     const rows = currentRows();
-    const head = ['スタッフ'];
-    for (let d = 1; d <= D; d++) head.push((ui.month + 1) + '/' + d + '(' + WD[weekday(d)] + ')');
-    head.push('出勤日数');
-    const lines = [head];
-    state.staff.forEach((s, i) => {
-      const line = [s.name];
-      let cnt = 0;
-      for (let d = 0; d < D; d++) {
-        if (rows[i][d]) { line.push('出'); cnt++; } else line.push('休');
-      }
-      line.push(cnt);
-      lines.push(line);
-    });
-    const csv = lines.map((l) => l.map((v) => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+    const made = !!md().shifts;
+    const header = [{ text: 'スタッフ' }];
+    for (let d = 1; d <= D; d++) {
+      const w = weekday(d);
+      const hol = holiday(d);
+      header.push({ text: d + '\n' + (hol ? '祝' : WD[w]), day: hol || w === 0 ? 'sun' : w === 6 ? 'sat' : '', high: isHigh(d) });
+    }
+    header.push({ text: '出勤' });
+    const body = state.staff.map((s, i) => ({
+      name: s.name,
+      cells: rows[i].map((v) => v === 1),
+      total: made ? rows[i].filter((v) => v === 1).length + '日' : '–',
+    }));
+    return { sheetName: (ui.month + 1) + '月', header, rows: body };
+  }
+
+  function exportExcel() {
+    const data = sheetData();
     if (sandboxed) {
       // ダウンロードできない環境では、Excelに貼り付けられるタブ区切りでコピーする
+      const lines = [data.header.map((c) => c.text.replace(/\n(.+)/, '($1)'))]
+        .concat(data.rows.map((r) => [r.name].concat(r.cells.map((w) => (w ? '出' : '')), r.total)));
       const tsv = lines.map((l) => l.join('\t')).join('\n');
       const done = () => toast('表をコピーしました。Excelやスプレッドシートに貼り付けられます');
       const fail = () => toast('コピーできませんでした');
@@ -356,10 +363,11 @@
       else fail();
       return;
     }
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+    const type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const url = URL.createObjectURL(new Blob([ShiftXlsx.build(data)], { type }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'shift-' + monthKey() + '.csv';
+    a.download = 'shift-' + monthKey() + '.xlsx';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -428,9 +436,9 @@
   $('prevMonth').onclick = () => shiftMonth(-1);
   $('nextMonth').onclick = () => shiftMonth(1);
   $('solveBtn').onclick = solve;
-  $('csvBtn').onclick = exportCsv;
+  $('excelBtn').onclick = exportExcel;
   if (sandboxed) {
-    $('csvBtn').textContent = '表をコピー';
+    $('excelBtn').textContent = '表をコピー';
     $('printBtn').hidden = true;
   }
   $('printBtn').onclick = () => window.print();
