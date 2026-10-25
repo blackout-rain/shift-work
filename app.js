@@ -44,7 +44,7 @@
   }
 
   const now = new Date();
-  const ui = { year: now.getFullYear(), month: now.getMonth(), mode: 'off', msg: null };
+  const ui = { year: now.getFullYear(), month: now.getMonth(), mode: 'off', msg: null, fromDay: 1 };
 
   const monthKey = () => ui.year + '-' + pad(ui.month + 1);
   const dayCount = () => new Date(ui.year, ui.month + 1, 0).getDate();
@@ -110,12 +110,14 @@
     const made = !!m.shifts;
     const rows = currentRows();
     const res = ShiftSolver.check(input, rows);
+    const from = fromDay(); // この日より前は作り直しで変わらない（表では薄く表示）
+    const lk = (d) => (d < from ? ' lk' : '');
 
     let h = '<table class="g"><thead><tr><th class="n">スタッフ</th>';
     for (let d = 1; d <= D; d++) {
       const w = weekday(d);
       const hol = holiday(d);
-      const cls = (hol ? 'hol ' : w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '');
+      const cls = (hol ? 'hol ' : w === 6 ? 'sat ' : w === 0 ? 'sun ' : '') + (isHigh(d) ? 'hi' : '') + lk(d);
       const title = (hol ? hol + '（' + WD[w] + '）　' : '') + 'タップで高め／通常を切り替え';
       h += '<th class="' + cls + '"><button class="dayBtn" data-d="' + d + '" title="' + title + '">' + d + '<br>' + (hol ? '祝' : WD[w]) + '</button></th>';
     }
@@ -128,7 +130,7 @@
         const works = rows[i][d - 1] === 1;
         if (works) cnt++;
         const bad = res.runCells.has(i + ',' + (d - 1)) || res.offCells.has(i + ',' + (d - 1));
-        let cls = 'cell';
+        let cls = 'cell' + lk(d);
         let body;
         let title = '';
         if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
@@ -156,6 +158,26 @@
     $('grid').innerHTML = h;
     renderBanner(res, made);
     renderOffForm();
+    renderFromDay(made);
+  }
+
+  // 作り直す開始日。まだ表を作っていない月は、最初から全部作るので選べない
+  const fromDay = () => (md().shifts ? Math.min(Math.max(ui.fromDay, 1), dayCount()) : 1);
+  let fromSig = '';
+  function renderFromDay(made) {
+    const sel = $('fromDay');
+    const sig = monthKey();
+    if (sig !== fromSig) {
+      fromSig = sig;
+      let o = '';
+      for (let d = 1; d <= dayCount(); d++) o += '<option value="' + d + '">' + d + '日(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')から' + (d === 1 ? '（全部）' : '') + '</option>';
+      sel.innerHTML = o;
+    }
+    sel.disabled = !made;
+    sel.title = made ? 'この日より前は今の表のまま残し、この日以降だけを作り直します' : '先に一度「自動作成」すると、途中から作り直せます';
+    sel.value = String(fromDay());
+    const btn = $('solveBtn');
+    if (!btn.disabled) btn.textContent = fromDay() > 1 ? fromDay() + '日以降を作り直す' : '自動作成';
   }
 
   function renderBanner(res, made) {
@@ -299,19 +321,23 @@
         runSolve();
       } finally {
         btn.disabled = false;
-        btn.textContent = '自動作成';
+        renderFromDay(!!md().shifts);
       }
     }, 30);
   }
 
   function runSolve() {
+    if (!md().shifts) ui.fromDay = 1; // 初めて作るときは必ず月初から（リセット後に前の開始日が残らないように）
     const input = buildInput();
-    const r = ShiftSolver.solve(input, { seed: Math.floor(Math.random() * 1e6) });
+    const from = fromDay() - 1;
+    const opts = { seed: Math.floor(Math.random() * 1e6) };
+    const r = from > 0 ? ShiftSolver.solveFrom(input, currentRows(), from, opts) : ShiftSolver.solve(input, opts);
     if (r.ok) {
       setRows(r.rows);
       ui.msg = null;
       save();
       renderGrid();
+      if (from > 0) toast((from + 1) + '日以降を作り直しました。' + from + '日までは変わっていません');
       return;
     }
     const c = r.conflict;
@@ -387,6 +413,7 @@
     ui.year = d.getFullYear();
     ui.month = d.getMonth();
     ui.msg = null;
+    ui.fromDay = 1;
     renderAll();
   }
 
@@ -436,6 +463,10 @@
   $('prevMonth').onclick = () => shiftMonth(-1);
   $('nextMonth').onclick = () => shiftMonth(1);
   $('solveBtn').onclick = solve;
+  $('fromDay').onchange = (e) => {
+    ui.fromDay = +e.target.value;
+    renderGrid();
+  };
   $('excelBtn').onclick = exportExcel;
   if (sandboxed) {
     $('excelBtn').textContent = '表をコピー';

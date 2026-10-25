@@ -196,6 +196,32 @@ const ok = (name, cond, extra) => {
   ok('Excelに全スタッフの名前があり、戦力ポイントは載らない', /新人A/.test(xtext) && !/\d+pt/.test(xtext));
   fs.writeFileSync(process.env.XLSX_OUT || '/tmp/shift-export.xlsx', xbuf);
 
+  // ---- 途中から作り直す ----
+  const workGrid = (pg) => pg.$$eval('#grid tbody tr', (trs) => trs.map((tr) => Array.from(tr.querySelectorAll('td.cell')).map((td) => (td.classList.contains('w') ? 1 : 0))));
+  const same = (a, b, days) => a.every((row, i) => row.slice(0, days).join() === b[i].slice(0, days).join());
+  ok('作成済みなら開始日を選べる', !(await pg.$eval('#fromDay', (e) => e.disabled)) && (await pg.textContent('#solveBtn')) === '自動作成');
+  await pg.selectOption('#fromDay', '16');
+  ok('開始日を選ぶとボタンの表示が変わる', (await pg.textContent('#solveBtn')) === '16日以降を作り直す', await pg.textContent('#solveBtn'));
+  const lockedCols = await pg.$$eval('#grid thead th.lk', (e) => e.length);
+  const lockedCells = await pg.$$eval('#grid tbody td.lk', (e) => e.length);
+  ok('固定される15日分が薄く表示される', lockedCols === 15 && lockedCells === 15 * (await gridRows(pg)), { lockedCols, lockedCells });
+  await pg.click('#grid td.cell[data-i="0"][data-d="20"]'); // 20日に希望休（絶対）を追加
+  const beforePart = await workGrid(pg);
+  let changedAfter = false;
+  let partOk = true;
+  for (let k = 0; k < 6; k++) {
+    await pg.click('#solveBtn');
+    await solved(pg);
+    const g = await workGrid(pg);
+    partOk = partOk && same(beforePart, g, 15) && g[0][19] === 0 && /すべての条件を満たしています/.test(await pg.textContent('#banner'));
+    if (!same(beforePart.map((r) => r.slice(15)), g.map((r) => r.slice(15)), 99)) changedAfter = true;
+  }
+  ok('16日以降を作り直しても、15日までは1マスも変わらず条件を満たす', partOk, await pg.textContent('#banner'));
+  ok('16日以降は作り直しで変わる', changedAfter);
+  ok('作り直したあともボタンは選んだ開始日のまま', (await pg.textContent('#solveBtn')) === '16日以降を作り直す');
+  await pg.selectOption('#fromDay', '1');
+  ok('1日から（全部）に戻すと自動作成になる', (await pg.textContent('#solveBtn')) === '自動作成' && (await pg.$$eval('#grid .lk', (e) => e.length)) === 0);
+
   // ---- 印刷 ----
   await pg.click('#printBtn');
   ok('印刷ボタンで印刷ダイアログが呼ばれる', (await pg.evaluate(() => window.__printCalls)) === 1);
