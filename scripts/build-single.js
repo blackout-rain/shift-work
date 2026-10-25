@@ -1,4 +1,4 @@
-// index.html・style.css・solver.js・app.js を、単体で開ける1つのHTMLにまとめる
+// index.html・style.css・solver.js・holidays.js・xlsx.js・app.js を、単体で開ける1つのHTMLにまとめる
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
@@ -9,6 +9,7 @@ let html = read('index.html');
 html = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + read('style.css') + '</style>');
 html = html.replace('<script src="solver.js"></script>', '<script>\n' + inline(read('solver.js')) + '</script>');
 html = html.replace('<script src="holidays.js"></script>', '<script>\n' + inline(read('holidays.js')) + '</script>');
+html = html.replace('<script src="xlsx.js"></script>', '<script>\n' + inline(read('xlsx.js')) + '</script>');
 html = html.replace('<script src="app.js"></script>', '<script>\n' + inline(read('app.js')) + '</script>');
 if (/<link rel="stylesheet"|<script src=/.test(html)) throw new Error('外部ファイルの参照が残っています');
 

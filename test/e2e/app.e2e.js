@@ -184,15 +184,17 @@ const ok = (name, cond, extra) => {
   ok('再読み込み後もスタッフ名が残る', /新人A/.test(await pg.textContent('#grid')));
   ok('再読み込み後もスタッフ数が残る', (await staffCount(pg)) === 9);
 
-  // ---- CSV ----
+  // ---- Excel ----
   await pg.click('#solveBtn');
   await solved(pg);
-  const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#csvBtn')]);
-  const csvPath = await dl.path();
-  const csv = fs.readFileSync(csvPath, 'utf8');
-  ok('CSVがダウンロードできる', /^shift-\d{4}-\d{2}\.csv$/.test(dl.suggestedFilename()), dl.suggestedFilename());
-  ok('CSVに全スタッフ分の行がある', csv.trim().split(/\r?\n/).length === 1 + 9, csv.split(/\r?\n/).length);
-  ok('CSVの先頭にBOMがあり日本語が読める', csv.charCodeAt(0) === 0xfeff && /新人A/.test(csv));
+  const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#excelBtn')]);
+  const xbuf = fs.readFileSync(await dl.path());
+  const fnameOk = /^shift-\d{4}-\d{2}\.xlsx$/.test(dl.suggestedFilename());
+  ok('Excelがダウンロードできる', fnameOk && xbuf.slice(0, 2).toString() === 'PK', dl.suggestedFilename());
+  // 圧縮なしのzipなので、中身のXMLがそのまま読める
+  const xtext = xbuf.toString('utf8');
+  ok('Excelに全スタッフの名前があり、戦力ポイントは載らない', /新人A/.test(xtext) && !/\d+pt/.test(xtext));
+  fs.writeFileSync(process.env.XLSX_OUT || '/tmp/shift-export.xlsx', xbuf);
 
   // ---- 印刷 ----
   await pg.click('#printBtn');
