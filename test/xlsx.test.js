@@ -60,3 +60,21 @@ test('XMLに使えない制御文字は取り除かれる', () => {
   const f = unzip(build({ ...sample, rows: [{ name: 'a\u0001b', cells: [false, false, false], total: '0日' }] }));
   assert.match(f['xl/worksheets/sheet1.xml'], /<t xml:space="preserve">ab<\/t>/);
 });
+
+test('標準スタイル(罫線0番)は罫線なしで、表の全セルが罫線ありのスタイルを使う', () => {
+  const f = unzip(build(sample));
+  const styles = f['xl/styles.xml'];
+  const borders = styles.match(/<borders[^>]*>(.*?)<\/borders>/s)[1].match(/<border>.*?<\/border>/gs);
+  assert.doesNotMatch(borders[0], /style=/, 'borders[0] は罫線なし');
+  const xfs = styles.match(/<cellXfs[^>]*>(.*?)<\/cellXfs>/s)[1].match(/<xf [^>]*?(\/>|>.*?<\/xf>)/gs);
+  const borderOf = (s) => +xfs[s].match(/borderId="(\d+)"/)[1];
+  const cells = [...f['xl/worksheets/sheet1.xml'].matchAll(/<c r="([A-Z]+\d+)" s="(\d+)"/g)];
+  assert.strictEqual(cells.length, 5 * 3, '見出し行＋2人分、全セルが出力される');
+  cells.forEach(([, ref, s]) => {
+    const b = borders[borderOf(+s)];
+    assert.match(b, /<left style="thin"/, ref);
+    assert.match(b, /<right style="thin"/, ref);
+    assert.match(b, /<bottom style="thin"/, ref);
+    assert.match(b, /<top style="(thin|thick)"/, ref);
+  });
+});

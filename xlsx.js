@@ -100,6 +100,7 @@
   const HI = { head: 10, headSat: 11, headSun: 12 };
 
   function styles() {
+    // borders の 0 番は必ず「罫線なし」にする（標準スタイルが使う番号。ここに枠を入れるとExcelで罫線が出ない）
     const border = (top) => '<border><left style="thin"><color rgb="' + COLOR.line + '"/></left><right style="thin"><color rgb="' + COLOR.line + '"/></right>' +
       (top ? '<top style="thick"><color rgb="' + COLOR.hi + '"/></top>' : '<top style="thin"><color rgb="' + COLOR.line + '"/></top>') +
       '<bottom style="thin"><color rgb="' + COLOR.line + '"/></bottom><diagonal/></border>';
@@ -111,21 +112,22 @@
     const fonts = [font(COLOR.ink, false), font(COLOR.ink, false), font(COLOR.headInk, false), font(COLOR.sat, false), font(COLOR.sun, false), font(COLOR.workInk, true)];
     // fills: 0,1 は Excel が必須とする既定 2 見出し 3 出
     const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill(COLOR.head), fill(COLOR.work)];
-    const borders = [border(false), border(true)];
+    const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>', border(false), border(true)];
+    // borderId: 1 = 四方に細い罫線、2 = 上だけ赤い太線
     const xfs = [
-      xf(0, 0, 0, 'center'), // 0 既定
-      xf(1, 0, 0, 'left'), // 1 スタッフ名
-      xf(2, 2, 0, 'left'), // 2 見出し(スタッフ)
-      xf(2, 2, 0, 'center'), // 3 見出し(平日)
-      xf(3, 2, 0, 'center'), // 4 見出し(土)
-      xf(4, 2, 0, 'center'), // 5 見出し(日祝)
-      xf(5, 3, 0, 'center'), // 6 出勤
-      xf(0, 0, 0, 'center'), // 7 休み(空白)
-      xf(2, 0, 0, 'center'), // 8 出勤日数
-      xf(2, 2, 0, 'center'), // 9 見出し(出勤日数)
-      xf(2, 2, 1, 'center'), // 10 見出し(平日だが多めの日)
-      xf(3, 2, 1, 'center'), // 11 見出し(土・多め)
-      xf(4, 2, 1, 'center'), // 12 見出し(日祝・多め)
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>', // 0 既定（標準スタイル）
+      xf(1, 0, 1, 'left'), // 1 スタッフ名
+      xf(2, 2, 1, 'left'), // 2 見出し(スタッフ)
+      xf(2, 2, 1, 'center'), // 3 見出し(平日)
+      xf(3, 2, 1, 'center'), // 4 見出し(土)
+      xf(4, 2, 1, 'center'), // 5 見出し(日祝)
+      xf(5, 3, 1, 'center'), // 6 出勤
+      xf(0, 0, 1, 'center'), // 7 休み(空白)
+      xf(2, 0, 1, 'center'), // 8 出勤日数
+      xf(2, 2, 1, 'center'), // 9 見出し(出勤日数)
+      xf(2, 2, 2, 'center'), // 10 見出し(平日だが多めの日)
+      xf(3, 2, 2, 'center'), // 11 見出し(土・多め)
+      xf(4, 2, 2, 'center'), // 12 見出し(日祝・多め)
     ];
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
       '<fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts>' +
