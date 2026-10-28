@@ -54,6 +54,7 @@ h1{font-size:20px;margin:0;font-weight:700}
 .syncStat.warn{color:var(--bad)}
 .syncStat.warn::before{background:var(--bad)}
 .btn.small{padding:2px 10px;font-size:12.5px}
+.norun .runOnly{display:none}
 .fld{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
 .fld input{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:7px 9px;font-size:15px;color:var(--ink)}
 .loginBox{width:min(100%,420px);padding:30px 30px 28px;gap:12px}
@@ -135,7 +136,7 @@ details[open] summary{margin-bottom:8px}
 /* 必要ポイント・スタッフ */
 .need-line{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-bottom:8px;font-size:14px}
 .need-line label{display:inline-flex;align-items:center;gap:6px}
-.need-line input,.staff-row input,.staff-row select,.off-row select{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;font-size:13.5px;min-width:0}
+.need-line input,.need-line select,.staff-row input,.staff-row select,.off-row select{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;font-size:13.5px;min-width:0}
 .need-line input{width:3.6em;text-align:center}
 .staff-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:6px 14px;margin-bottom:8px}
 .staff-row{display:flex;align-items:center;gap:4px}

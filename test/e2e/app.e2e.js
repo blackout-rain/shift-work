@@ -166,14 +166,18 @@ const ok = (name, cond, extra) => {
   ok('出勤を直すモードでセルが切り替わる', (await pg.$eval(cell, (e) => e.classList.contains('w'))) !== w0);
   await pg.click('#modeOff');
 
-  // ---- 3連勤の検出 ----
+  // ---- 連勤の制限（初期値は「制限しない」） ----
+  ok('連勤の制限は初期値が「制限しない」で、連勤に関する表示は隠れている', (await pg.$eval('#maxRun', (e) => e.value)) === '0' && !(await pg.isVisible('.legend .runOnly')) && !(await pg.isVisible('#staffList select[data-f="prevStreak"]')));
   await pg.click('#modeWork');
   for (const d of [1, 2, 3]) {
     const c = `#grid tbody tr:nth-child(4) td[data-d="${d}"]`;
     if (!(await pg.$eval(c, (e) => e.classList.contains('w') || e.classList.contains('r')))) await pg.click(c);
   }
+  ok('制限しないときは、3連勤にしても警告されない', (await pg.$$eval('#grid td.v', (e) => e.length)) === 0 && !/3連勤/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  await pg.selectOption('#maxRun', '2');
+  ok('「2連勤まで」にすると、3連勤の表示（凡例・前月末の連勤）が出る', (await pg.isVisible('.legend .runOnly')) && (await pg.isVisible('#staffList select[data-f="prevStreak"]')));
   const bad = await pg.$$eval('#grid td.v', (e) => e.length);
-  ok('手直しで3連勤にすると赤く警告される', bad >= 3 || /3連勤/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  ok('2連勤までのとき、手直しで3連勤にすると赤く警告される', bad >= 3 || /3連勤/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
   await pg.click('#modeOff');
 
   // ---- 月の切り替えと保存 ----

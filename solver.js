@@ -4,7 +4,7 @@
  * 条件
  *   - 毎日、出勤者の戦力ポイント合計が必要ポイント以上
  *   - 「絶対」の希望休の日は出勤しない
- *   - 3日連続では出勤しない（2連勤まで）
+ *   - 3日連続では出勤しない（2連勤まで）。input.maxRun を 0 にすると、連勤の制限をしない
  *   - イベント出勤の日は、その人を出勤扱い（連勤には数える）にし、店のポイントには数えない
  *
  * 「何連勤しているか」(0/1/2) を人数分まとめた状態を使い、
@@ -23,6 +23,8 @@
 
   const MAX_STAFF = 12;
   const MAX_RUN = 2; // 連続で働ける日数の上限
+  // input.maxRun: 未指定なら MAX_RUN、0 なら制限しない（Infinity）、1〜2 ならその日数まで
+  const runLimit = (v) => (v === undefined || v === null ? MAX_RUN : v > 0 ? Math.min(MAX_RUN, v) : Infinity);
   const SURPLUS_W = 10; // 余剰ポイント1ptあたりの重み
   const SOFT_W = 25; // 「できれば休み」を叶えられなかった1日あたりの重み
 
@@ -45,6 +47,7 @@
    *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
    *   event:      boolean[n][D]    イベントに出る日（任意）。出勤扱い・連勤に数える・店のポイントには数えない
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
+   *   maxRun:     number           連続で働ける日数の上限（任意。未指定は2、0なら制限しない）
    *   workBase:   number[n]        すでに出勤した日数（任意。偏りの計算に足す。solveFrom が使う）
    *   highBase:   number[n]        すでに出勤した高め設定の日数（任意）
    * }
@@ -63,6 +66,8 @@
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
+    const LIMIT = runLimit(input.maxRun);
+    const limited = LIMIT !== Infinity; // 連勤を制限しないときは、連勤の状態を持たなくてよい
     const event = input.event || points.map(() => new Array(D).fill(false));
     // イベント出勤の人は、その日は店の出勤から外し（allowedMask）、連勤だけ進める（nextState に足す）
     const evMask = [];
@@ -110,16 +115,17 @@
     const digit = (st, i) => Math.floor(st / pow3[i]) % 3;
     const allowedMask = (d, st) => {
       let m = 0;
-      for (let i = 0; i < n; i++) if (digit(st, i) < MAX_RUN && !off[i][d] && !(evMask[d] & (1 << i))) m |= 1 << i;
+      for (let i = 0; i < n; i++) if (digit(st, i) < LIMIT && !off[i][d] && !(evMask[d] & (1 << i))) m |= 1 << i;
       return m;
     };
     // その日イベントに出る人のうち、すでに2連勤中の人（この状態では3連勤になってしまう）
     const evOver = (d, st) => {
       let m = 0;
-      for (let i = 0; i < n; i++) if (evMask[d] & (1 << i) && digit(st, i) >= MAX_RUN) m |= 1 << i;
+      for (let i = 0; i < n; i++) if (evMask[d] & (1 << i) && digit(st, i) >= LIMIT) m |= 1 << i;
       return m;
     };
     const nextState = (st, sub) => {
+      if (!limited) return 0; // 連勤を制限しないなら、状態は常に「0」で足りる
       let r = 0;
       for (let i = 0; i < n; i++) if (sub & (1 << i)) r += (digit(st, i) + 1) * pow3[i];
       return r;
@@ -153,7 +159,7 @@
     }
 
     let init = 0;
-    for (let i = 0; i < n; i++) init += Math.min(MAX_RUN, Math.max(0, prev[i] | 0)) * pow3[i];
+    if (limited) for (let i = 0; i < n; i++) init += Math.min(LIMIT, Math.max(0, prev[i] | 0)) * pow3[i];
 
     // minPenalty(d, st): d日目以降を条件どおり組んだときの罰点合計の最小値（組めなければ INF）
     const INF = 1e9;
@@ -306,11 +312,12 @@
         if (high[d]) hi[i] += sign;
       };
       const lineOk = (i) => {
-        let run = Math.min(MAX_RUN, Math.max(0, prev[i] | 0));
+        let run = limited ? Math.min(LIMIT, Math.max(0, prev[i] | 0)) : 0;
         const r = rows[i];
         for (let d = 0; d < D; d++) {
           if (r[d] || evMask[d] & (1 << i)) {
-            if ((r[d] && (off[i][d] || evMask[d] & (1 << i))) || ++run > MAX_RUN) return false;
+            if (r[d] && (off[i][d] || evMask[d] & (1 << i))) return false;
+            if (limited && ++run > LIMIT) return false;
           } else run = 0;
         }
         return true;
@@ -413,6 +420,7 @@
     if (from >= D) return { ok: true, rows: rows.map((r) => r.slice()) };
     const high = input.high || input.need.map(() => false);
     const prev0 = input.prevStreak || input.points.map(() => 0);
+    const LIMIT = runLimit(input.maxRun);
     const prevStreak = [];
     const workBase = [];
     const highBase = [];
@@ -428,7 +436,7 @@
           if (high[d]) hi++;
         }
       }
-      prevStreak.push(Math.min(MAX_RUN, run));
+      prevStreak.push(LIMIT === Infinity ? 0 : Math.min(LIMIT, run));
       workBase.push(work);
       highBase.push(hi);
     }
@@ -440,6 +448,7 @@
       off: input.off && input.off.map(tail),
       soft: input.soft && input.soft.map(tail),
       event: input.event && input.event.map(tail),
+      maxRun: input.maxRun,
       prevStreak,
       workBase,
       highBase,
@@ -463,6 +472,7 @@
     const off = input.off || points.map(() => new Array(D).fill(false));
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const prev = input.prevStreak || points.map(() => 0);
+    const LIMIT = runLimit(input.maxRun);
 
     const event = input.event || points.map(() => new Array(D).fill(false));
     const total = [];
@@ -474,16 +484,16 @@
       diff.push(t - need[d]);
     }
 
-    const runCells = new Set(); // "i,d" 3連勤に含まれるセル
-    for (let i = 0; i < n; i++) {
-      const line = new Array(Math.min(MAX_RUN, Math.max(0, prev[i] | 0))).fill(1);
+    const runCells = new Set(); // "i,d" 連勤の上限を超える並びに含まれるセル（連勤を制限しないときは空）
+    for (let i = 0; LIMIT !== Infinity && i < n; i++) {
+      const line = new Array(Math.min(LIMIT, Math.max(0, prev[i] | 0))).fill(1);
       const offset = line.length;
       for (let d = 0; d < D; d++) line.push((rows[i] && rows[i][d]) || event[i][d] ? 1 : 0);
       let run = 0;
       for (let k = 0; k < line.length; k++) {
         run = line[k] ? run + 1 : 0;
-        if (run > MAX_RUN) {
-          for (let b = 0; b <= MAX_RUN; b++) {
+        if (run > LIMIT) {
+          for (let b = 0; b <= LIMIT; b++) {
             const d = k - b - offset;
             if (d >= 0) runCells.add(i + ',' + d);
           }
