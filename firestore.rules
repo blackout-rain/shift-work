@@ -1,12 +1,14 @@
 // Firestore のルール（Firebase コンソール → Firestore Database → ルール に貼り付けて公開する）
-// 「あなたのメールアドレス」を、このアプリ専用のアカウントのメールアドレスに書き換える。
-// このルールで、そのアカウント以外は shift/main を読み書きできない。
+// 'あなたのメールアドレス' を、このアプリ専用のアカウントのメールアドレスに書き換える。
+// このルールで、リストに書いたアカウント以外は shift/main を読み書きできない。
+// アドレスを増やすときは、Authentication の「ユーザー」にも追加したうえで、次のようにリストに足す。
+//   request.auth.token.email in ['1人目のメールアドレス', '2人目のメールアドレス']
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /shift/main {
       allow read, write: if request.auth != null
-        && request.auth.token.email == 'あなたのメールアドレス';
+        && request.auth.token.email in ['あなたのメールアドレス'];
     }
   }
 }
