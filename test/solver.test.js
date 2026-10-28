@@ -179,3 +179,78 @@ test('固定した部分で多く出ている人は、作り直す部分では�
   const sum = (a) => a.reduce((x, y) => x + y, 0);
   assert.ok(sum(tail(withBase.rows[4])) < sum(plain.rows[4]) - 2, '前半で出た分、後半はかなり少なくなる');
 });
+
+/* ---- イベント出勤 ---- */
+const withEvents = (input, list) => {
+  input.event = points.map(() => new Array(D).fill(false));
+  list.forEach(([i, d]) => (input.event[i][d] = true));
+  return input;
+};
+
+test('イベントの日は店のポイントに数えず、その人は店の出勤から外れる', () => {
+  const input = withEvents(base(), [[0, 3], [0, 10], [1, 17], [2, 18]]);
+  const r = solve(input);
+  assert.ok(r.ok);
+  assert.strictEqual(r.rows[0][3], 0);
+  assert.strictEqual(r.rows[0][10], 0);
+  assert.strictEqual(r.rows[1][17], 0);
+  assert.strictEqual(r.rows[2][18], 0);
+  const c = check(input, r.rows);
+  assert.strictEqual(c.shortDays, 0, '残りの人で必要ポイントを満たす');
+  assert.strictEqual(c.runCells.size, 0);
+});
+
+test('イベントの日も連勤に数える（前後の日を足して3連勤にならない）', () => {
+  const input = withEvents(base(), [[3, 8], [3, 9], [4, 15]]);
+  const r = solve(input);
+  assert.ok(r.ok);
+  assert.strictEqual(r.rows[3][7], 0, 'イベント2連続の前日は休み');
+  assert.strictEqual(r.rows[3][10], 0, 'イベント2連続の翌日は休み');
+  assert.strictEqual(check(input, r.rows).runCells.size, 0);
+});
+
+test('イベントが3日続くと3連勤になるので、その日を返して組めないとする', () => {
+  const input = withEvents(base(), [[5, 1], [5, 2], [5, 3]]);
+  const r = solve(input);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.conflict.reason, 'run');
+  assert.strictEqual(r.conflict.day, 3);
+  assert.deepStrictEqual(r.conflict.staff, [5]);
+});
+
+test('前月末に2連勤中なら、月初のイベント出勤は3連勤になる', () => {
+  const input = withEvents(base(), [[0, 0]]);
+  input.prevStreak = [2, 0, 0, 0, 0, 0, 0];
+  const r = solve(input);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.conflict.reason, 'run');
+  assert.strictEqual(r.conflict.day, 0);
+});
+
+test('イベントの日数に決まりはなく、たくさん入れても組める', () => {
+  const list = [];
+  for (let d = 1; d < D; d += 3) list.push([5, d]); // 1pt の人が10日イベント
+  list.push([6, 2], [6, 5], [6, 8]);
+  const input = withEvents(base(), list);
+  const r = solve(input);
+  assert.ok(r.ok);
+  const c = check(input, r.rows);
+  assert.strictEqual(c.shortDays, 0);
+  assert.strictEqual(c.runCells.size, 0);
+});
+
+test('イベントの出勤も出勤日数に数え、偏りを調整する', () => {
+  const input = withEvents(base(), [[4, 1], [4, 4], [4, 7], [4, 10], [4, 13], [4, 16], [4, 19], [4, 22]]);
+  const r = solve(input, { seed: 4 });
+  assert.ok(r.ok);
+  const shop = (i) => r.rows[i].reduce((a, b) => a + b, 0);
+  assert.ok(shop(4) < shop(3), 'イベントが多い人は、店の出勤が少なめになる');
+});
+
+test('途中から作り直すときも、固定部分のイベントを連勤に数える', () => {
+  const input = withEvents(base(), [[0, 13], [0, 14]]);
+  const rows = points.map(() => new Array(D).fill(0));
+  const r = solveFrom(input, rows, 15, { seed: 1 });
+  assert.ok(r.ok);
+  assert.strictEqual(r.rows[0][15], 0, 'イベント2連続の翌日は休み');
+});

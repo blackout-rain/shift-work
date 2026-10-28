@@ -78,3 +78,21 @@ test('標準スタイル(罫線0番)は罫線なしで、表の全セルが罫�
     assert.match(b, /<top style="(thin|thick)"/, ref);
   });
 });
+
+test('イベント出勤は「イ」で入り、表の下に説明の行が付く', () => {
+  const f = unzip(build({ ...sample, rows: [{ name: '石川', cells: [false, 'ev', true], total: '2日' }], note: 'イ：イベント出勤' }));
+  const sheet = f['xl/worksheets/sheet1.xml'];
+  assert.match(sheet, /<c r="C2" s="13" t="inlineStr"><is><t xml:space="preserve">イ<\/t>/);
+  assert.match(sheet, /<c r="D2" s="6"/);
+  assert.match(sheet, /<row r="4"><c r="A4" s="14" t="inlineStr"><is><t xml:space="preserve">イ：イベント出勤<\/t>/);
+  assert.match(sheet, /<dimension ref="A1:E4"\/>/);
+  // イベントのセルにも罫線がある
+  const styles = f['xl/styles.xml'];
+  const xfs = styles.match(/<cellXfs[^>]*>(.*?)<\/cellXfs>/s)[1].match(/<xf [^>]*?(\/>|>.*?<\/xf>)/gs);
+  assert.match(xfs[13], /borderId="1"/);
+});
+
+test('説明が無ければ説明の行は作らない', () => {
+  const sheet = unzip(build(sample))['xl/worksheets/sheet1.xml'];
+  assert.doesNotMatch(sheet, /s="14"/);
+});

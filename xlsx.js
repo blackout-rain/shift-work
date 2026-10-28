@@ -5,7 +5,8 @@
  * build({ sheetName, header, rows }) → Uint8Array
  *   header: [{ text, day, high }]  day: 'sat' | 'sun'（土曜／日曜・祝日の文字色）、high: 必要ptが多めの日（上に赤い太線）
  *           先頭がスタッフ列、末尾が出勤日数列。日付セルの text は「1\n木」のように改行で曜日を分ける
- *   rows:   [{ name, cells: [true|false, …], total }]
+ *   rows:   [{ name, cells: [true|false|'ev', …], total }]  true=出勤 'ev'=イベント出勤（「イ」）
+ *   note:   表の下に1行だけ書く説明（任意）
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -92,10 +93,10 @@
   }
 
   /* ---------- 見た目（画面の配色に合わせる） ---------- */
-  const COLOR = { line: 'FF8A9A94', head: 'FFE8ECE7', headInk: 'FF5A6A6C', ink: 'FF16262A', work: 'FFD5EDE5', workInk: 'FF06483B', sat: 'FF2F6FB3', sun: 'FFC9503A', hi: 'FFC9503A' };
+  const COLOR = { line: 'FF8A9A94', head: 'FFE8ECE7', headInk: 'FF5A6A6C', ink: 'FF16262A', work: 'FFD5EDE5', workInk: 'FF06483B', sat: 'FF2F6FB3', sun: 'FFC9503A', hi: 'FFC9503A', ev: 'FFE6DFF5', evInk: 'FF5B3FB0' };
 
   // cellXfs の番号
-  const S = { name: 1, headName: 2, head: 3, headSat: 4, headSun: 5, work: 6, off: 7, total: 8, headCnt: 9 };
+  const S = { name: 1, headName: 2, head: 3, headSat: 4, headSun: 5, work: 6, off: 7, total: 8, headCnt: 9, event: 13, note: 14 };
   // 必要ptが多めの日の見出しは、上に赤い太線を付けた別スタイルにする
   const HI = { head: 10, headSat: 11, headSun: 12 };
 
@@ -108,10 +109,10 @@
     const fill = (rgb) => '<fill><patternFill patternType="solid"><fgColor rgb="' + rgb + '"/><bgColor indexed="64"/></patternFill></fill>';
     const xf = (font, fillId, borderId, h) => '<xf numFmtId="0" fontId="' + font + '" fillId="' + fillId + '" borderId="' + borderId + '" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">' +
       '<alignment horizontal="' + h + '" vertical="center" wrapText="1"' + (h === 'left' ? ' indent="1"' : '') + '/></xf>';
-    // fonts: 0 通常 1 太字 2 見出し(灰) 3 土曜 4 日祝 5 出
-    const fonts = [font(COLOR.ink, false), font(COLOR.ink, false), font(COLOR.headInk, false), font(COLOR.sat, false), font(COLOR.sun, false), font(COLOR.workInk, true)];
-    // fills: 0,1 は Excel が必須とする既定 2 見出し 3 出
-    const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill(COLOR.head), fill(COLOR.work)];
+    // fonts: 0 通常 1 太字 2 見出し(灰) 3 土曜 4 日祝 5 出 6 イベント
+    const fonts = [font(COLOR.ink, false), font(COLOR.ink, false), font(COLOR.headInk, false), font(COLOR.sat, false), font(COLOR.sun, false), font(COLOR.workInk, true), font(COLOR.evInk, true)];
+    // fills: 0,1 は Excel が必須とする既定 2 見出し 3 出 4 イベント
+    const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill(COLOR.head), fill(COLOR.work), fill(COLOR.ev)];
     const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>', border(false), border(true)];
     // borderId: 1 = 四方に細い罫線、2 = 上だけ赤い太線
     const xfs = [
@@ -128,6 +129,8 @@
       xf(2, 2, 2, 'center'), // 10 見出し(平日だが多めの日)
       xf(3, 2, 2, 'center'), // 11 見出し(土・多め)
       xf(4, 2, 2, 'center'), // 12 見出し(日祝・多め)
+      xf(6, 4, 1, 'center'), // 13 イベント出勤
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>', // 14 表の下の説明（折り返さず右へはみ出して読ませる）
     ];
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
       '<fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts>' +
@@ -147,9 +150,10 @@
   const str = (ref, style, text) => '<c r="' + ref + '" s="' + style + '" t="inlineStr"><is><t xml:space="preserve">' + xml(clean(text)) + '</t></is></c>';
   const blank = (ref, style) => '<c r="' + ref + '" s="' + style + '"/>';
 
-  function sheet(header, rows) {
+  function sheet(header, rows, note) {
     const cols = header.length;
-    const last = colName(cols - 1) + (rows.length + 1);
+    const noteRow = rows.length + 3; // 表との間に1行あける
+    const last = colName(cols - 1) + (note ? noteRow : rows.length + 1);
     let h = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
       '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:' + last + '"/>' +
       '<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" activePane="bottomRight" state="frozen"/>' +
@@ -174,10 +178,11 @@
       h += '<row r="' + n + '" ht="24" customHeight="1">' + str('A' + n, S.name, r.name);
       r.cells.forEach((works, ci) => {
         const ref = colName(ci + 1) + n;
-        h += works ? str(ref, S.work, '出') : blank(ref, S.off);
+        h += works === 'ev' ? str(ref, S.event, 'イ') : works ? str(ref, S.work, '出') : blank(ref, S.off);
       });
       h += str(colName(cols - 1) + n, S.total, r.total) + '</row>';
     });
+    if (note) h += '<row r="' + noteRow + '">' + str('A' + noteRow, S.note, note) + '</row>';
     return h + '</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>' +
       '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>';
   }
@@ -200,7 +205,7 @@
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
       { name: 'xl/styles.xml', data: styles() },
-      { name: 'xl/worksheets/sheet1.xml', data: sheet(opt.header, opt.rows) },
+      { name: 'xl/worksheets/sheet1.xml', data: sheet(opt.header, opt.rows, opt.note || '') },
     ]);
   }
 

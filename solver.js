@@ -5,6 +5,7 @@
  *   - 毎日、出勤者の戦力ポイント合計が必要ポイント以上
  *   - 「絶対」の希望休の日は出勤しない
  *   - 3日連続では出勤しない（2連勤まで）
+ *   - イベント出勤の日は、その人を出勤扱い（連勤には数える）にし、店のポイントには数えない
  *
  * 「何連勤しているか」(0/1/2) を人数分まとめた状態を使い、
  * 最後の日まで条件を満たせるかを厳密に調べる。条件を満たす表が
@@ -42,6 +43,7 @@
    *   high:       boolean[D]       土日祝など高め設定の日（偏りの計算に使う）
    *   off:        boolean[n][D]    絶対の希望休
    *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
+   *   event:      boolean[n][D]    イベントに出る日（任意）。出勤扱い・連勤に数える・店のポイントには数えない
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
    *   workBase:   number[n]        すでに出勤した日数（任意。偏りの計算に足す。solveFrom が使う）
    *   highBase:   number[n]        すでに出勤した高め設定の日数（任意）
@@ -61,8 +63,24 @@
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
-    const workBase = input.workBase || points.map(() => 0);
-    const highBase = input.highBase || points.map(() => 0);
+    const event = input.event || points.map(() => new Array(D).fill(false));
+    // イベント出勤の人は、その日は店の出勤から外し（allowedMask）、連勤だけ進める（nextState に足す）
+    const evMask = [];
+    const evWork = new Array(n).fill(0);
+    const evHigh = new Array(n).fill(0);
+    for (let d = 0; d < D; d++) {
+      let m = 0;
+      for (let i = 0; i < n; i++)
+        if (event[i][d] && !off[i][d]) {
+          m |= 1 << i;
+          evWork[i]++;
+          if (high[d]) evHigh[i]++;
+        }
+      evMask.push(m);
+    }
+    // 偏りの計算では、イベント出勤も出勤日数に入れる
+    const workBase = (input.workBase || points.map(() => 0)).map((v, i) => v + evWork[i]);
+    const highBase = (input.highBase || points.map(() => 0)).map((v, i) => v + evHigh[i]);
     // その日に「できれば休み」の人（絶対の希望休の人は出勤できないので除く）
     const softMask = [];
     for (let d = 0; d < D; d++) {
@@ -92,7 +110,13 @@
     const digit = (st, i) => Math.floor(st / pow3[i]) % 3;
     const allowedMask = (d, st) => {
       let m = 0;
-      for (let i = 0; i < n; i++) if (digit(st, i) < MAX_RUN && !off[i][d]) m |= 1 << i;
+      for (let i = 0; i < n; i++) if (digit(st, i) < MAX_RUN && !off[i][d] && !(evMask[d] & (1 << i))) m |= 1 << i;
+      return m;
+    };
+    // その日イベントに出る人のうち、すでに2連勤中の人（この状態では3連勤になってしまう）
+    const evOver = (d, st) => {
+      let m = 0;
+      for (let i = 0; i < n; i++) if (evMask[d] & (1 << i) && digit(st, i) >= MAX_RUN) m |= 1 << i;
       return m;
     };
     const nextState = (st, sub) => {
@@ -138,10 +162,11 @@
       if (d === D) return 0;
       const k = d * S + st;
       if (memo[k] >= 0) return memo[k];
+      if (evOver(d, st)) return (memo[k] = INF);
       const allowed = allowedMask(d, st);
       let best = INF;
       for (const sub of minimalSubsets(d, allowed)) {
-        const rest = minPenalty(d + 1, nextState(st, sub));
+        const rest = minPenalty(d + 1, nextState(st, sub | evMask[d]));
         if (rest < INF) best = Math.min(best, dayPenalty(d, sub) + rest);
       }
       memo[k] = best;
@@ -156,15 +181,33 @@
       for (let d = 0; d < D; d++) {
         const next = new Set();
         let maxPossible = 0;
+        let overMask = 0;
+        let usable = 0;
         for (const st of reach) {
+          const over = evOver(d, st);
+          if (over) {
+            overMask |= over;
+            continue;
+          }
+          usable++;
           const allowed = allowedMask(d, st);
           maxPossible = Math.max(maxPossible, psum[allowed]);
-          for (const sub of minimalSubsets(d, allowed)) next.add(nextState(st, sub));
+          for (const sub of minimalSubsets(d, allowed)) next.add(nextState(st, sub | evMask[d]));
+        }
+        if (usable === 0) {
+          // イベント出勤が重なって、3連勤になってしまう
+          const staff = [];
+          for (let i = 0; i < n; i++) if (overMask & (1 << i)) staff.push(i);
+          return { reason: 'run', day: d, staff };
         }
         if (next.size === 0) {
           const offStaff = [];
-          for (let i = 0; i < n; i++) if (off[i][d]) offStaff.push(i);
-          return { reason: 'short', day: d, need: need[d], maxPossible, offStaff };
+          const eventStaff = [];
+          for (let i = 0; i < n; i++) {
+            if (off[i][d]) offStaff.push(i);
+            if (evMask[d] & (1 << i)) eventStaff.push(i);
+          }
+          return { reason: 'short', day: d, need: need[d], maxPossible, offStaff, eventStaff };
         }
         reach = next;
       }
@@ -202,7 +245,7 @@
         let best = -1;
         let bestScore = Infinity;
         for (const sub of minimalSubsets(d, allowed)) {
-          const nxt = nextState(st, sub);
+          const nxt = nextState(st, sub | evMask[d]);
           const rest = minPenalty(d + 1, nxt);
           if (rest >= INF) continue;
           let score = dayPenalty(d, sub) + rest + rng() * noise;
@@ -226,7 +269,7 @@
             if (high[d]) hiWork[i]++;
           }
         }
-        st = nextState(st, best);
+        st = nextState(st, best | evMask[d]);
       }
       return { rows, surplus, missed, cost: costOf(surplus, missed, work, hiWork) };
     }
@@ -266,8 +309,8 @@
         let run = Math.min(MAX_RUN, Math.max(0, prev[i] | 0));
         const r = rows[i];
         for (let d = 0; d < D; d++) {
-          if (r[d]) {
-            if (off[i][d] || ++run > MAX_RUN) return false;
+          if (r[d] || evMask[d] & (1 << i)) {
+            if ((r[d] && (off[i][d] || evMask[d] & (1 << i))) || ++run > MAX_RUN) return false;
           } else run = 0;
         }
         return true;
@@ -378,8 +421,9 @@
       let work = 0;
       let hi = 0;
       for (let d = 0; d < from; d++) {
-        run = rows[i][d] ? run + 1 : 0;
-        if (rows[i][d]) {
+        const w = rows[i][d] || (input.event && input.event[i][d]); // イベント出勤も出勤日数・連勤に数える
+        run = w ? run + 1 : 0;
+        if (w) {
           work++;
           if (high[d]) hi++;
         }
@@ -395,6 +439,7 @@
       high: tail(high),
       off: input.off && input.off.map(tail),
       soft: input.soft && input.soft.map(tail),
+      event: input.event && input.event.map(tail),
       prevStreak,
       workBase,
       highBase,
@@ -419,11 +464,12 @@
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const prev = input.prevStreak || points.map(() => 0);
 
+    const event = input.event || points.map(() => new Array(D).fill(false));
     const total = [];
     const diff = [];
     for (let d = 0; d < D; d++) {
       let t = 0;
-      for (let i = 0; i < n; i++) if (rows[i] && rows[i][d]) t += points[i];
+      for (let i = 0; i < n; i++) if (rows[i] && rows[i][d] && !event[i][d]) t += points[i]; // イベント出勤は店のポイントに数えない
       total.push(t);
       diff.push(t - need[d]);
     }
@@ -432,7 +478,7 @@
     for (let i = 0; i < n; i++) {
       const line = new Array(Math.min(MAX_RUN, Math.max(0, prev[i] | 0))).fill(1);
       const offset = line.length;
-      for (let d = 0; d < D; d++) line.push(rows[i] && rows[i][d] ? 1 : 0);
+      for (let d = 0; d < D; d++) line.push((rows[i] && rows[i][d]) || event[i][d] ? 1 : 0);
       let run = 0;
       for (let k = 0; k < line.length; k++) {
         run = line[k] ? run + 1 : 0;

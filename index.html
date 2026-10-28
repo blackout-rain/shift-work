@@ -35,9 +35,10 @@
       <span><i class="sw w"></i>出勤</span>
       <span><i class="sw r"></i>絶対休み</span>
       <span><i class="sw s"></i>できれば休み</span>
+      <span><i class="sw ev"></i>イベント出勤（店のpt対象外）</span>
       <span><i class="sw sm"></i>できれば休みだが出勤</span>
       <span><i class="sw v"></i>3連勤</span>
-      <span class="hint">「希望休を入れる」モードでは、セルをタップするたびに 絶対休み → できれば休み → なし と変わります。</span>
+      <span class="hint">「希望休を入れる」モードでは、セルをタップするたびに 絶対休み → できれば休み → イベント → なし と変わります。</span>
     </div>
   </section>
 
@@ -46,6 +47,11 @@
       <summary>希望休の入力（<span id="offMonth"></span>）</summary>
       <div id="offRows" class="off-rows"></div>
       <p class="note">「絶」は絶対に休み、「△」はできれば休み（ボタンで切り替え）。1人3日まで。4日以上は表のセルをタップ。</p>
+    </details>
+    <details open class="wide">
+      <summary>イベント出勤の入力（<span id="evMonth"></span>）</summary>
+      <div id="eventRows" class="ev-rows"></div>
+      <p class="note">イベントに出る日です。日数に決まりはなく、何日でも追加できます。その日は出勤扱い（連勤には数えます）で、店の必要ポイントには数えません。</p>
     </details>
     <details open class="wide">
       <summary>必要ポイントとスタッフ</summary>
