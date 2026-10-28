@@ -96,3 +96,13 @@ test('説明が無ければ説明の行は作らない', () => {
   const sheet = unzip(build(sample))['xl/worksheets/sheet1.xml'];
   assert.doesNotMatch(sheet, /s="14"/);
 });
+
+test('名前が「=」「+」「-」「@」で始まっても、式として動かず、文字として入る', () => {
+  const names = ['=1+1', '+SUM(A1)', '-2+3', '@A1', '=HYPERLINK("http://example.com","x")', '\t=cmd'];
+  const f = unzip(build({ ...sample, rows: names.map((name) => ({ name, cells: [false, false, false], total: '0日' })) }));
+  const sheet = f['xl/worksheets/sheet1.xml'];
+  assert.doesNotMatch(sheet, /<f[ >]/, '式のタグが無い');
+  assert.doesNotMatch(sheet, /<c [^>]*t="str"/, '式の結果としての文字列でもない');
+  assert.strictEqual((sheet.match(/t="inlineStr"/g) || []).length, 5 + names.length * 2, '見出し・名前・出勤日数はすべて文字（inlineStr）');
+  assert.match(sheet, /<t xml:space="preserve">=1\+1<\/t>/);
+});

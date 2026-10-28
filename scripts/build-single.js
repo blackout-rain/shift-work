@@ -13,6 +13,9 @@ html = html.replace('<script src="solver.js"></script>', '<script>\n' + inline(r
 html = html.replace('<script src="holidays.js"></script>', '<script>\n' + inline(read('holidays.js')) + '</script>');
 html = html.replace('<script src="xlsx.js"></script>', '<script>\n' + inline(read('xlsx.js')) + '</script>');
 html = html.replace('<script src="app.js"></script>', '<script>\n' + inline(read('app.js')) + '</script>');
+// 配布用は外部ファイルを読まないので、CSPから 'self' を外してさらに厳しくする（開発用の index.html は外部の .js を読むので 'self' が要る）
+html = html.replace("script-src 'self' 'unsafe-inline'", "script-src 'unsafe-inline'").replace("style-src 'self' 'unsafe-inline'", "style-src 'unsafe-inline'");
+if (/'self'/.test(html.match(/Content-Security-Policy" content="([^"]*)"/)[1])) throw new Error('CSPを厳しくできませんでした');
 if (/<link rel="stylesheet"|<script src=/.test(html)) throw new Error('外部ファイルの参照が残っています');
 
 fs.mkdirSync(path.join(root, 'dist'), { recursive: true });

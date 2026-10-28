@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 外部からスクリプトを読み込まず、通信先はログインと保存に使うFirebaseだけに限る。参照元も送らない -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>シフト自動作成</title>
 <style>
 :root{
@@ -181,8 +184,11 @@ details[open] summary{margin-bottom:8px}
 .ev-row{display:grid;grid-template-columns:2.8em 1fr;gap:6px;align-items:center}
 .ev-row .who{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ev-row .chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.chip{display:inline-flex;align-items:center;gap:2px;background:var(--ev-soft);color:var(--ev);border:1px solid var(--ev);border-radius:999px;padding:0 4px 0 9px;font-size:13px;font-weight:700;line-height:24px}
-.chip .evDel{border:0;background:transparent;color:inherit;cursor:pointer;padding:0 4px;font-size:14px;line-height:1}
+.chip{display:inline-flex;align-items:center;background:var(--ev-soft);color:var(--ev);border:1px solid var(--ev);border-radius:999px;padding:0 2px 0 10px;font-size:13px;font-weight:700;line-height:26px}
+.chip .evDel{border:0;background:transparent;color:inherit;cursor:pointer;width:30px;height:28px;margin:-1px 0;padding:0;font-size:16px;line-height:1;border-radius:999px}
+@media (max-width:520px){
+  .ev-row{grid-template-columns:1fr;gap:3px}
+}
 .ev-row .evAdd{border:1px solid var(--line);background:var(--bg);border-radius:6px;height:26px;padding:0 4px;font-size:13px;color:var(--muted);min-width:0}
 
 /* 確認ポップ */
@@ -1341,10 +1347,70 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
       months: {},
     };
   }
+  /*
+   * 保存データ（この端末の保存内容・クラウドのデータ）を読み込むとき、値の型と範囲を整える。
+   * 書き換えられたデータが画面に埋め込まれたり、オブジェクトの仕組みを壊したりしないようにするため。
+   */
+  const clampInt = (v, lo, hi, def) => {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def;
+  };
+  const SAFE_ID = /^[A-Za-z0-9_-]{1,32}$/;
+  const RESERVED = ['__proto__', 'constructor', 'prototype'];
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const isObj = (o) => o !== null && typeof o === 'object' && !Array.isArray(o);
+  function normalize(s) {
+    const seen = new Set();
+    const remap = {}; // 使えないIDを付け替えたときの 古いID → 新しいID
+    s.staff = s.staff.filter(isObj).map((x) => {
+      let id = String(x.id);
+      if (!SAFE_ID.test(id) || RESERVED.includes(id) || seen.has(id)) {
+        const fresh = uid();
+        if (!seen.has(id)) remap[id] = fresh;
+        id = fresh;
+      }
+      seen.add(id);
+      return { id, name: String(x.name).slice(0, 20), points: clampInt(x.points, 1, 9, 1), prevStreak: clampInt(x.prevStreak, 0, 2, 0) };
+    });
+    s.needWeekday = clampInt(s.needWeekday, 0, 99, 7);
+    s.needHigh = clampInt(s.needHigh, 0, 99, 9);
+    s.maxRun = s.maxRun === 2 ? 2 : 0;
+    if (!isObj(s.months)) s.months = {};
+    Object.keys(s.months).forEach((k) => {
+      const m = s.months[k];
+      if (!/^\d{4}-\d{2}$/.test(k) || !isObj(m)) { delete s.months[k]; return; }
+      const fix = (src) => {
+        const out = {};
+        if (!isObj(src)) return out;
+        Object.keys(src).forEach((id) => {
+          const nid = own(remap, id) ? remap[id] : id;
+          if (seen.has(nid) && !RESERVED.includes(nid)) out[nid] = src[id];
+        });
+        return out;
+      };
+      const off = fix(m.off);
+      Object.keys(off).forEach((id) => {
+        const days = {};
+        if (isObj(off[id])) Object.keys(off[id]).forEach((d) => { const kind = clampInt(off[id][d], 0, 3, 0); if (/^\d{1,2}$/.test(d) && kind) days[d] = kind; });
+        off[id] = days;
+      });
+      let shifts = null;
+      if (isObj(m.shifts)) {
+        shifts = fix(m.shifts);
+        Object.keys(shifts).forEach((id) => { shifts[id] = Array.isArray(shifts[id]) ? shifts[id].slice(0, 31).map((v) => (v ? 1 : 0)) : []; });
+      }
+      const dayType = {};
+      if (isObj(m.dayType)) Object.keys(m.dayType).forEach((d) => { if (/^\d{1,2}$/.test(d) && (m.dayType[d] === 'high' || m.dayType[d] === 'normal')) dayType[d] = m.dayType[d]; });
+      const needOv = {};
+      if (isObj(m.needOv)) Object.keys(m.needOv).forEach((d) => { if (/^\d{1,2}$/.test(d) && Number.isFinite(Number(m.needOv[d]))) needOv[d] = clampInt(m.needOv[d], 0, 99, 0); });
+      s.months[k] = { off, shifts, dayType, needOv };
+    });
+    return s;
+  }
   function load() {
     try {
       const s = JSON.parse(localStorage.getItem(KEY));
-      if (s && Array.isArray(s.staff) && s.months) return s;
+      if (isObj(s) && Array.isArray(s.staff) && s.staff.length && isObj(s.months)) return normalize(s);
     } catch (e) { /* 保存データが無い・壊れている場合は初期状態で始める */ }
     return null;
   }
@@ -1398,7 +1464,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
   const defaultNeed = (day) => (isHigh(day) ? state.needHigh : state.needWeekday);
   function needOf(day) {
     const o = md().needOv[day];
-    return o === undefined ? defaultNeed(day) : o;
+    return o === undefined || !Number.isFinite(Number(o)) ? defaultNeed(day) : Number(o);
   }
 
   /* ---------- 希望休（1=絶対休み、2=できれば休み） ---------- */
@@ -1457,7 +1523,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     h += '<th class="cnt">出勤</th></tr></thead><tbody>';
     state.staff.forEach((s, i) => {
       let cnt = 0;
-      h += '<tr><td class="n">' + esc(s.name) + '<span>' + s.points + 'pt</span></td>';
+      h += '<tr><td class="n">' + esc(s.name) + '<span>' + esc(s.points) + 'pt</span></td>';
       for (let d = 1; d <= D; d++) {
         const kind = offKind(s.id, d);
         const works = rows[i][d - 1] === 1;
@@ -1479,7 +1545,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     h += '</tbody><tfoot><tr class="needRow"><th>必要pt</th>';
     for (let d = 1; d <= D; d++) {
       const ov = m.needOv[d] !== undefined;
-      h += '<td><input class="needIn' + (ov ? ' ov' : '') + '" type="number" min="0" max="99" data-d="' + d + '" value="' + needOf(d) + '" aria-label="' + d + '日の必要ポイント"></td>';
+      h += '<td><input class="needIn' + (ov ? ' ov' : '') + '" type="number" min="0" max="99" data-d="' + d + '" value="' + esc(needOf(d)) + '" aria-label="' + d + '日の必要ポイント"></td>';
     }
     h += '<td></td></tr><tr><th>合計pt</th>';
     for (let d = 0; d < D; d++) h += '<td>' + (made ? res.total[d] : '–') + '</td>';
@@ -1558,7 +1624,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
       const opts = ['<option value="">—</option>'];
       for (let d = 1; d <= D; d++) opts.push('<option value="' + d + '">' + d + '(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')</option>');
       wrap.innerHTML = state.staff.map((s) =>
-        '<div class="off-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
+        '<div class="off-row" data-id="' + esc(s.id) + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div>' +
         Array.from({ length: OFF_SLOTS }, (_, k) =>
           '<span class="slot" data-slot="' + k + '"><select data-slot="' + k + '" aria-label="' + esc(s.name) + 'の希望休' + (k + 1) + '">' + opts.join('') + '</select>' +
           '<button class="kind" data-slot="' + k + '" hidden></button></span>').join('') +
@@ -1594,7 +1660,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
       const days = eventDays(s.id);
       const opts = ['<option value="">＋日付を追加</option>'];
       for (let d = 1; d <= D; d++) if (!days.includes(d)) opts.push('<option value="' + d + '">' + dayLabel(d) + '</option>');
-      return '<div class="ev-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div><div class="chips">' +
+      return '<div class="ev-row" data-id="' + esc(s.id) + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div><div class="chips">' +
         days.map((d) => '<span class="chip">' + dayLabel(d) + '<button class="evDel" data-d="' + d + '" aria-label="' + esc(s.name) + 'の' + d + '日のイベントを削除" title="削除">×</button></span>').join('') +
         '<select class="evAdd" aria-label="' + esc(s.name) + 'にイベントの日を追加">' + opts.join('') + '</select></div></div>';
     }).join('');
@@ -1612,12 +1678,12 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     document.body.classList.toggle('norun', !maxRun()); // 連勤の制限をしないときは、連勤に関する表示を隠す
     let h = '';
     state.staff.forEach((s) => {
-      h += '<div class="staff-row" data-id="' + s.id + '">' +
+      h += '<div class="staff-row" data-id="' + esc(s.id) + '">' +
         '<input data-f="name" value="' + esc(s.name) + '" aria-label="名前" maxlength="8">' +
-        '<label class="pt"><input data-f="points" type="number" min="1" max="9" value="' + s.points + '" aria-label="戦力ポイント">pt</label>' +
+        '<label class="pt"><input data-f="points" type="number" min="1" max="9" value="' + esc(s.points) + '" aria-label="戦力ポイント">pt</label>' +
         '<select class="runOnly" data-f="prevStreak" aria-label="前月末の連勤" title="前月末の連勤">' +
         [0, 1, 2].map((v) => '<option value="' + v + '"' + (s.prevStreak === v ? ' selected' : '') + '>連' + v + '日</option>').join('') +
-        '</select><button class="x" data-del="' + s.id + '" aria-label="' + esc(s.name) + 'を削除" title="削除">×</button></div>';
+        '</select><button class="x" data-del="' + esc(s.id) + '" aria-label="' + esc(s.name) + 'を削除" title="削除">×</button></div>';
     });
     $('staffList').innerHTML = h;
     $('addStaff').disabled = state.staff.length >= MAX_UI_STAFF;
@@ -2047,7 +2113,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     if (meta.dirty) push(); // 送信中にさらに変更があった
   }
 
-  const validState = (s) => s && Array.isArray(s.staff) && s.staff.length && s.months && typeof s.months === 'object';
+  const validState = (s) => isObj(s) && Array.isArray(s.staff) && s.staff.length && isObj(s.months);
 
   async function pull(quiet) {
     if (!sync.enabled || !sync.signedIn() || syncBusy) return;
@@ -2078,7 +2144,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
         try { localStorage.setItem(BACKUP_KEY, JSON.stringify({ at: new Date().toISOString(), state })); } catch (e) { /* 退避できなくても続ける */ }
       }
       const hadLocalEdits = meta.dirty;
-      state = remote;
+      state = normalize(remote);
       saveLocal();
       meta = { updateTime: r.updateTime, dirty: false };
       writeMeta();
