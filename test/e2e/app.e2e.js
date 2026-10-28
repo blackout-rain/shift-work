@@ -382,6 +382,7 @@ const ok = (name, cond, extra) => {
   const A = await openDevice();
   ok('同期の設定があり未ログインなら、ログイン画面が出る', !(await A.pg.$eval('#login', (e) => e.hidden)) && /未ログイン/.test(await statText(A.pg)));
   ok('ログインするまで、シフト表・設定・ボタンは画面に出ない', !(await A.pg.isVisible('#grid')) && !(await A.pg.isVisible('#staffList')) && !(await A.pg.isVisible('#solveBtn')) && !(await A.pg.isVisible('#excelBtn')));
+  ok('ログイン画面にタイトル「シフト自動作成」が出る', (await A.pg.textContent('#loginTitle')) === 'シフト自動作成' && (await A.pg.isVisible('#loginTitle')));
   ok('ログイン画面に「あとで」などの抜け道がない', (await A.pg.$$eval('#login button', (b) => b.map((x) => x.textContent.trim()))).join() === 'ログイン');
   await A.pg.keyboard.press('Escape');
   ok('Escを押してもログイン画面は閉じない', !(await A.pg.$eval('#login', (e) => e.hidden)) && !(await A.pg.isVisible('#grid')));
