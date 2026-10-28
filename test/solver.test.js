@@ -254,3 +254,70 @@ test('途中から作り直すときも、固定部分のイベントを連勤�
   assert.ok(r.ok);
   assert.strictEqual(r.rows[0][15], 0, 'イベント2連続の翌日は休み');
 });
+
+/* ---- 連勤の制限なし（maxRun: 0） ---- */
+test('連勤の上限を指定しなければ、これまでどおり2連勤まで', () => {
+  const input = base();
+  const r = solve(input);
+  assert.ok(r.ok);
+  assert.strictEqual(check(input, r.rows).runCells.size, 0);
+});
+
+test('maxRun を 0 にすると、3連勤以上も警告されず、前月末の連勤も使わない', () => {
+  const input = { ...base(), maxRun: 0, prevStreak: [2, 2, 0, 0, 0, 0, 0] };
+  const rows = points.map(() => new Array(D).fill(0));
+  for (let d = 0; d < 6; d++) rows[0][d] = 1; // 6連勤
+  assert.strictEqual(check(input, rows).runCells.size, 0);
+  assert.strictEqual(check({ ...input, maxRun: undefined }, rows).runCells.size > 0, true, '制限ありなら警告される');
+  const r = solve(input);
+  assert.ok(r.ok);
+  assert.strictEqual(check(input, r.rows).shortDays, 0);
+});
+
+test('連勤の制限があると組めない月も、制限なしなら組める', () => {
+  // 祝日続きで、3日連続の必要ポイントに届かない例（連勤2日までだと足りなくなる）
+  const input = withEvents(base(), [[0, 3], [0, 10], [1, 10], [2, 18]]);
+  const limited = solve(input);
+  assert.strictEqual(limited.ok, false);
+  const free = solve({ ...input, maxRun: 0 });
+  assert.ok(free.ok);
+  const c = check({ ...input, maxRun: 0 }, free.rows);
+  assert.strictEqual(c.shortDays, 0);
+  assert.strictEqual(free.rows[0][10], 0);
+  assert.strictEqual(free.rows[1][10], 0);
+});
+
+test('制限なしなら、イベントが3日続いても組める', () => {
+  const input = { ...withEvents(base(), [[5, 1], [5, 2], [5, 3]]), maxRun: 0 };
+  const r = solve(input);
+  assert.ok(r.ok);
+  assert.strictEqual(check(input, r.rows).shortDays, 0);
+});
+
+test('制限なしで途中から作り直しても、固定部分は変わらず条件を満たす', () => {
+  const input = { ...base(), maxRun: 0 };
+  const first = solve(input, { seed: 2 });
+  const r = solveFrom(input, first.rows, 12, { seed: 8 });
+  assert.ok(r.ok);
+  r.rows.forEach((row, i) => assert.deepStrictEqual(row.slice(0, 12), first.rows[i].slice(0, 12)));
+  assert.strictEqual(check(input, r.rows).shortDays, 0);
+});
+
+test('10人で連勤の制限なしでも速く、結果の質も制限ありと同程度', () => {
+  const pts = [3, 3, 2, 2, 2, 1, 1, 2, 1, 1];
+  const mk = (maxRun) => ({
+    points: pts,
+    need: Array.from({ length: D }, (_, d) => (isHigh(d) ? 9 : 7)),
+    high: Array.from({ length: D }, (_, d) => isHigh(d)),
+    off: pts.map(() => new Array(D).fill(false)),
+    prevStreak: pts.map(() => 0),
+    maxRun,
+  });
+  const t = Date.now();
+  const free = solve(mk(0), { seed: 3 });
+  const ms = Date.now() - t;
+  assert.ok(free.ok);
+  assert.ok(ms < 1500, '制限なしの10人の作成が遅い: ' + ms + 'ms');
+  const limited = solve(mk(2), { seed: 3 });
+  assert.ok(free.cost <= limited.cost * 1.5 + 5, '制限なしの結果が悪い: ' + free.cost + ' vs ' + limited.cost);
+});

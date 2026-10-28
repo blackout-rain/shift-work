@@ -41,7 +41,7 @@
       <span><i class="sw s"></i>できれば休み</span>
       <span><i class="sw ev"></i>イベント出勤（店のpt対象外）</span>
       <span><i class="sw sm"></i>できれば休みだが出勤</span>
-      <span><i class="sw v"></i>3連勤</span>
+      <span class="runOnly"><i class="sw v"></i>3連勤</span>
       <span class="hint">「希望休を入れる」モードでは、セルをタップするたびに 絶対休み → できれば休み → イベント → なし と変わります。</span>
     </div>
   </section>
@@ -55,19 +55,20 @@
     <details open class="wide">
       <summary>イベント出勤の入力（<span id="evMonth"></span>）</summary>
       <div id="eventRows" class="ev-rows"></div>
-      <p class="note">イベントに出る日です。日数に決まりはなく、何日でも追加できます。その日は出勤扱い（連勤には数えます）で、店の必要ポイントには数えません。</p>
+      <p class="note">イベントに出る日です。日数に決まりはなく、何日でも追加できます。その日は出勤扱いで、店の必要ポイントには数えません。連勤の制限をしているときは、連勤にも数えます。</p>
     </details>
     <details open class="wide">
       <summary>必要ポイントとスタッフ</summary>
       <div class="need-line">
         <label>平日 <input type="number" id="needWeekday" min="0" max="99"> pt</label>
         <label>土日祝 <input type="number" id="needHigh" min="0" max="99"> pt</label>
+        <label>連勤の制限 <select id="maxRun"><option value="0">制限しない</option><option value="2">2連勤まで（3連勤は禁止）</option></select></label>
         <span class="note">祝日はカレンダーどおり。日付をタップすると高め／通常を切り替えます。</span>
       </div>
       <div id="staffList" class="staff-list"></div>
       <div class="staff-actions">
         <button class="btn" id="addStaff">スタッフを追加</button>
-        <span class="note">「連」は前月末に何日続けて出勤していたか（2日なら月初は休み）。</span>
+        <span class="note runOnly">「連」は前月末に何日続けて出勤していたか（2日なら月初は休み）。</span>
       </div>
     </details>
     <div class="foot">

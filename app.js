@@ -15,6 +15,7 @@
       staff: [['佐藤', 3], ['鈴木', 3], ['田中', 2], ['高橋', 2], ['伊藤', 2], ['渡辺', 1], ['山本', 1]].map(([name, points]) => ({ id: uid(), name, points, prevStreak: 0 })),
       needWeekday: 7,
       needHigh: 9,
+      maxRun: 0, // 連勤の制限: 0=制限しない、2=2連勤まで
       months: {},
     };
   }
@@ -52,6 +53,7 @@
   const ui = { year: now.getFullYear(), month: now.getMonth(), mode: 'off', msg: null, fromDay: 1 };
 
   const monthKey = () => ui.year + '-' + pad(ui.month + 1);
+  const maxRun = () => (state.maxRun === 2 ? 2 : 0); // 保存データに無いときは「制限しない」
   const dayCount = () => new Date(ui.year, ui.month + 1, 0).getDate();
   const weekday = (day) => new Date(ui.year, ui.month, day).getDay();
   function md() {
@@ -97,6 +99,7 @@
       soft: state.staff.map((s) => days.map((d) => offKind(s.id, d) === SOFT)),
       event: state.staff.map((s) => days.map((d) => offKind(s.id, d) === EVENT)),
       prevStreak: state.staff.map((s) => s.prevStreak || 0),
+      maxRun: maxRun(),
     };
   }
   function currentRows() {
@@ -283,12 +286,14 @@
   function renderSettings() {
     $('needWeekday').value = state.needWeekday;
     $('needHigh').value = state.needHigh;
+    $('maxRun').value = String(maxRun());
+    document.body.classList.toggle('norun', !maxRun()); // 連勤の制限をしないときは、連勤に関する表示を隠す
     let h = '';
     state.staff.forEach((s) => {
       h += '<div class="staff-row" data-id="' + s.id + '">' +
         '<input data-f="name" value="' + esc(s.name) + '" aria-label="名前" maxlength="8">' +
         '<label class="pt"><input data-f="points" type="number" min="1" max="9" value="' + s.points + '" aria-label="戦力ポイント">pt</label>' +
-        '<select data-f="prevStreak" aria-label="前月末の連勤" title="前月末の連勤">' +
+        '<select class="runOnly" data-f="prevStreak" aria-label="前月末の連勤" title="前月末の連勤">' +
         [0, 1, 2].map((v) => '<option value="' + v + '"' + (s.prevStreak === v ? ' selected' : '') + '>連' + v + '日</option>').join('') +
         '</select><button class="x" data-del="' + s.id + '" aria-label="' + esc(s.name) + 'を削除" title="削除">×</button></div>';
     });
@@ -377,7 +382,7 @@
         'この日に店に出られる人の合計は最大' + c.maxPossible + 'ptです。</span>' +
         (who.length ? '<span>この日の希望休：' + esc(who.join('、')) + '</span>' : '') +
         (ev.length ? '<span>この日のイベント出勤：' + esc(ev.join('、')) + '</span>' : '') +
-        '<span>直前までの連勤制限も影響しています。この日の希望休やイベントを減らす、必要ptを下げる、スタッフを増やすのいずれかで解決します。</span>';
+        '<span>' + (maxRun() ? '直前までの連勤制限も影響しています。' : '') + 'この日の希望休やイベントを減らす、必要ptを下げる、スタッフを増やすのいずれかで解決します。</span>';
     } else if (c.reason === 'run') {
       const day = c.day + 1;
       const who = c.staff.map((i) => state.staff[i].name);
@@ -529,6 +534,11 @@
   $('modeOff').onclick = () => setMode('off');
   $('modeWork').onclick = () => setMode('work');
 
+  $('maxRun').addEventListener('change', (e) => {
+    state.maxRun = +e.target.value === 2 ? 2 : 0;
+    document.body.classList.toggle('norun', !maxRun());
+    changed();
+  });
   ['needWeekday', 'needHigh'].forEach((id) => {
     $(id).addEventListener('change', (e) => {
       const v = Math.max(0, Math.min(99, Math.round(+e.target.value || 0)));
