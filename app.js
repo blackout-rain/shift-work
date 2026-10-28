@@ -25,8 +25,13 @@
     } catch (e) { /* 保存データが無い・壊れている場合は初期状態で始める */ }
     return null;
   }
-  function save() {
+  function saveLocal() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 保存できなくても動作は続ける */ }
+  }
+  // 変更のたびに、この端末に保存し、ログイン中ならクラウドにも送る（markDirty）
+  function save() {
+    saveLocal();
+    markDirty();
   }
 
   let state = load();
@@ -628,8 +633,205 @@
     solve();
   };
 
+  /* ---------- 端末をまたぐ同期 ---------- */
+  // ログインしている間は、変更をクラウド（Firestore）に自動で保存し、別の端末の変更を読み込む。
+  // 設定が空・公開ページ（sandboxed）では何もせず、これまでどおりこの端末の中だけに保存する。
+  const sync = ShiftSync.create(sandboxed ? {} : window.SHIFT_SYNC);
+  const META_KEY = 'shift-work-sync-v1'; // この端末が最後に同期した時刻と、未送信の変更があるか
+  const BACKUP_KEY = 'shift-work-backup-v1'; // クラウドの内容に置き換えたとき、この端末の未送信データを退避する
+  const readMeta = () => {
+    try {
+      const m = JSON.parse(localStorage.getItem(META_KEY));
+      if (m && typeof m === 'object') return m;
+    } catch (e) { /* 初めての端末 */ }
+    return null;
+  };
+  // 同期の記録が無い端末でも、すでに使っていたデータがあれば「未送信」とみなす
+  let meta = readMeta() || { updateTime: null, dirty: !firstRun };
+  const writeMeta = () => {
+    try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) { /* 保存できなくても動作は続ける */ }
+  };
+  let syncBusy = false;
+  let syncRev = 0; // 変更のたびに増やし、送信中の変更を取りこぼさない
+  let syncTimer = null;
+  let retryTimer = null;
+
+  function setStat(kind, text) {
+    const el = $('syncStat');
+    el.className = 'syncStat ' + kind;
+    el.textContent = text;
+  }
+  function renderSyncUi() {
+    $('sync').hidden = !sync.enabled;
+    if (!sync.enabled) return;
+    $('syncBtn').textContent = sync.signedIn() ? 'ログアウト' : 'ログイン';
+    $('syncBtn').title = sync.signedIn() ? sync.email() + ' でログイン中' : '';
+    $('saveNote').textContent = sync.signedIn()
+      ? '入力内容はこの端末に保存され、ログイン中はクラウドにも自動で保存されます（どの端末からでも同じ内容が見られます）。'
+      : '入力内容はこの端末にだけ保存されます。ログインすると、クラウドにも保存されます。';
+  }
+
+  function markDirty() {
+    if (!sync.enabled) return;
+    meta.dirty = true;
+    writeMeta();
+    syncRev++;
+    if (!sync.signedIn()) return setStat('off', '未ログイン（この端末にだけ保存）');
+    setStat('busy', '保存待ち…');
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(push, 700);
+  }
+
+  // 失敗の種類ごとに、表示と次の動きを決める
+  function syncError(e) {
+    if (e.code === 'network') {
+      setStat('warn', meta.dirty ? '未保存（通信できません）' : '通信できません');
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => (meta.dirty ? push() : pull(true)), 20000);
+    } else if (e.code === 'signedout') {
+      renderSyncUi();
+      setStat('off', '未ログイン');
+      showLogin(e.message);
+    } else {
+      setStat('warn', e.message);
+      toast(e.message);
+    }
+  }
+
+  async function push() {
+    if (!sync.enabled || !sync.signedIn() || !meta.dirty || syncBusy) return;
+    syncBusy = true;
+    const rev = syncRev;
+    setStat('busy', '保存中…');
+    try {
+      const r = await sync.save(JSON.stringify(state), meta.updateTime);
+      meta.updateTime = r.updateTime;
+      if (rev === syncRev) meta.dirty = false;
+      writeMeta();
+      setStat('ok', '同期済み');
+    } catch (e) {
+      syncBusy = false;
+      return e.conflict ? pull() : syncError(e);
+    }
+    syncBusy = false;
+    if (meta.dirty) push(); // 送信中にさらに変更があった
+  }
+
+  const validState = (s) => s && Array.isArray(s.staff) && s.staff.length && s.months && typeof s.months === 'object';
+
+  async function pull(quiet) {
+    if (!sync.enabled || !sync.signedIn() || syncBusy) return;
+    syncBusy = true;
+    setStat('busy', '読み込み中…');
+    try {
+      const r = await sync.load();
+      syncBusy = false;
+      if (!r.exists) {
+        // クラウドがまだ空なら、この端末のデータを最初のデータとして送る
+        meta.updateTime = null;
+        meta.dirty = true;
+        writeMeta();
+        if (firstRun && !md().shifts) solve(); // 初めての端末は、最初の表を作る（作ると自動で送られる）
+        else push();
+        return;
+      }
+      if (r.updateTime === meta.updateTime) {
+        if (meta.dirty) push();
+        else setStat('ok', '同期済み');
+        return;
+      }
+      // クラウドの方が新しい（または、この端末が初めて同期する）ので、クラウドの内容に合わせる
+      let remote = null;
+      try { remote = JSON.parse(r.json); } catch (e) { /* 読めない場合は下で止める */ }
+      if (!validState(remote)) return setStat('warn', 'クラウドのデータを読めませんでした');
+      if (meta.dirty) {
+        try { localStorage.setItem(BACKUP_KEY, JSON.stringify({ at: new Date().toISOString(), state })); } catch (e) { /* 退避できなくても続ける */ }
+      }
+      const hadLocalEdits = meta.dirty;
+      state = remote;
+      saveLocal();
+      meta = { updateTime: r.updateTime, dirty: false };
+      writeMeta();
+      ui.msg = null;
+      renderSettings();
+      renderAll();
+      setStat('ok', '同期済み');
+      if (hadLocalEdits) toast('クラウドの内容を読み込みました。この端末の未送信の変更は退避してあります');
+      else if (quiet) toast('別の端末での変更を読み込みました');
+    } catch (e) {
+      syncBusy = false;
+      syncError(e);
+    }
+  }
+
+  /* ログイン */
+  function showLogin(msg) {
+    $('loginErr').textContent = msg || '';
+    $('login').hidden = false;
+    try { $('loginEmail').value = $('loginEmail').value || localStorage.getItem('shift-work-last-email') || ''; } catch (e) { /* 無くてよい */ }
+    ($('loginEmail').value ? $('loginPass') : $('loginEmail')).focus();
+  }
+  function hideLogin() {
+    $('login').hidden = true;
+    $('loginPass').value = '';
+    $('loginErr').textContent = '';
+  }
+  $('loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $('loginOk');
+    btn.disabled = true;
+    $('loginErr').textContent = '';
+    try {
+      await sync.signIn($('loginEmail').value, $('loginPass').value);
+      try { localStorage.setItem('shift-work-last-email', sync.email()); } catch (err) { /* 無くてよい */ }
+      hideLogin();
+      renderSyncUi();
+      await pull();
+    } catch (err) {
+      $('loginErr').textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  const loginLater = () => {
+    hideLogin();
+    setStat('off', '未ログイン（この端末にだけ保存）');
+    if (firstRun && !md().shifts) solve();
+  };
+  $('loginLater').onclick = loginLater;
+  $('login').addEventListener('keydown', (e) => { if (e.key === 'Escape') loginLater(); });
+  $('syncBtn').onclick = async () => {
+    if (!sync.signedIn()) return showLogin();
+    const yes = await ask({
+      title: 'ログアウトしますか？',
+      body: 'この端末のデータは残ります。ログインし直すまで、クラウドとの同期は止まります。',
+      ok: 'ログアウト',
+    });
+    if (!yes) return;
+    sync.signOut();
+    clearTimeout(syncTimer);
+    renderSyncUi();
+    setStat('off', '未ログイン（この端末にだけ保存）');
+  };
+  // 別の端末で変更していることがあるので、画面に戻ったときに最新を確認する。ネットワークが戻ったら未送信分を送る
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && sync.signedIn() && !meta.dirty) pull(true);
+  });
+  window.addEventListener('online', () => {
+    if (sync.signedIn()) meta.dirty ? push() : pull(true);
+  });
+
   /* ---------- 起動 ---------- */
   renderSettings();
   renderAll();
-  if (firstRun) solve();
+  renderSyncUi();
+  if (!sync.enabled) {
+    if (firstRun) solve();
+  } else if (sync.signedIn()) {
+    setStat('busy', '読み込み中…');
+    pull();
+  } else {
+    setStat('off', '未ログイン');
+    showLogin();
+  }
 })();

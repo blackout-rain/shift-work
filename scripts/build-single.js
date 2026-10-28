@@ -1,4 +1,4 @@
-// index.html・style.css・solver.js・holidays.js・xlsx.js・app.js を、単体で開ける1つのHTMLにまとめる
+// index.html・style.css・firebase-config.js・sync.js・solver.js・holidays.js・xlsx.js・app.js を、単体で開ける1つのHTMLにまとめる
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
@@ -7,6 +7,8 @@ const inline = (code) => code.replace(/<\/script>/gi, '<\\/script>');
 
 let html = read('index.html');
 html = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + read('style.css') + '</style>');
+html = html.replace('<script src="firebase-config.js"></script>', '<script>\n' + inline(read('firebase-config.js')) + '</script>');
+html = html.replace('<script src="sync.js"></script>', '<script>\n' + inline(read('sync.js')) + '</script>');
 html = html.replace('<script src="solver.js"></script>', '<script>\n' + inline(read('solver.js')) + '</script>');
 html = html.replace('<script src="holidays.js"></script>', '<script>\n' + inline(read('holidays.js')) + '</script>');
 html = html.replace('<script src="xlsx.js"></script>', '<script>\n' + inline(read('xlsx.js')) + '</script>');
