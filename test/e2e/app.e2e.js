@@ -41,6 +41,8 @@ const ok = (name, cond, extra) => {
     const errs = [];
     pg.on('pageerror', (e) => errs.push(String(e)));
     pg.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
+    // 公開用の設定が入っていても、同期のテスト以外ではクラウドにつながないよう、同期の設定を空にする
+    await pg.addInitScript(() => { window.SHIFT_SYNC = { apiKey: '', projectId: '' }; });
     await pg.addInitScript(() => { window.__printCalls = 0; window.print = () => { window.__printCalls++; }; });
     await pg.goto(url);
     await pg.waitForSelector('#grid table');
@@ -207,9 +209,10 @@ const ok = (name, cond, extra) => {
   // セルのタップ: 絶対休み → できれば休み → イベント → なし
   const tapCell = '#grid tbody tr:last-child td.cell[data-d="26"]';
   const tapCls = async () => (await pg.$eval(tapCell, (e) => e.className)).replace(/\s*(cell|lk)\s*/g, ' ').trim();
+  const has = (cls, name) => cls.split(' ').includes(name); // 3連勤の警告枠(v)などが付いていても判定できるように
   const tapSeq = [];
   for (let k = 0; k < 4; k++) { await pg.click(tapCell); tapSeq.push(await tapCls()); }
-  ok('セルのタップで 絶対→できれば→イベント→なし と変わる', tapSeq[0].includes('r') && tapSeq[1].includes('s') && tapSeq[2] === 'ev' && !/\b(r|s|ev)\b/.test(tapSeq[3]), tapSeq);
+  ok('セルのタップで 絶対→できれば→イベント→なし と変わる', has(tapSeq[0], 'r') && has(tapSeq[1], 's') && has(tapSeq[2], 'ev') && !/\b(r|s|ev)\b/.test(tapSeq[3]), tapSeq);
   // イベント3日連続は組めない
   const lastName = await pg.$eval('#grid tbody tr:last-child td.n', (e) => e.firstChild.textContent);
   for (const day of ['5', '6', '7']) await pg.selectOption(`${evRow(lastName)} .evAdd`, day); // 月・火・水（必要ptに余裕のある平日）
