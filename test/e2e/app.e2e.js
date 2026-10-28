@@ -355,15 +355,16 @@ const ok = (name, cond, extra) => {
     return send(200, { updateTime: fb.updateTime });
   };
   const devices = [];
-  async function openDevice() {
+  async function openDevice(seed) {
     const c = await browser.newContext({ viewport: { width: 1100, height: 900 } }); // 端末ごとに保存領域が別
     await c.route(/googleapis\.com/, fbRoute);
     await c.addInitScript(() => { window.SHIFT_SYNC = { apiKey: 'k', projectId: 'p' }; });
+    if (seed) await c.addInitScript((s) => { if (!localStorage.getItem('shift-work-v1')) localStorage.setItem('shift-work-v1', s); }, JSON.stringify(seed));
     const p = await c.newPage();
     const e = [];
     p.on('pageerror', (x) => e.push(String(x)));
     await p.goto(url);
-    await p.waitForSelector('#grid table');
+    await p.waitForSelector('#grid table', { state: 'attached' }); // 未ログインの間は隠れているので、存在だけ待つ
     devices.push(c);
     return { ctx: c, pg: p, errs: e };
   }
@@ -380,12 +381,17 @@ const ok = (name, cond, extra) => {
 
   const A = await openDevice();
   ok('同期の設定があり未ログインなら、ログイン画面が出る', !(await A.pg.$eval('#login', (e) => e.hidden)) && /未ログイン/.test(await statText(A.pg)));
+  ok('ログインするまで、シフト表・設定・ボタンは画面に出ない', !(await A.pg.isVisible('#grid')) && !(await A.pg.isVisible('#staffList')) && !(await A.pg.isVisible('#solveBtn')) && !(await A.pg.isVisible('#excelBtn')));
+  ok('ログイン画面に「あとで」などの抜け道がない', (await A.pg.$$eval('#login button', (b) => b.map((x) => x.textContent.trim()))).join() === 'ログイン');
+  await A.pg.keyboard.press('Escape');
+  ok('Escを押してもログイン画面は閉じない', !(await A.pg.$eval('#login', (e) => e.hidden)) && !(await A.pg.isVisible('#grid')));
   await login(A.pg, 'wrong');
   await A.pg.waitForFunction(() => document.getElementById('loginErr').textContent.length > 0);
   ok('パスワードが違うとエラーが出て、ログイン画面は閉じない', /メールアドレスかパスワードが違います/.test(await A.pg.textContent('#loginErr')) && !(await A.pg.$eval('#login', (e) => e.hidden)));
   await login(A.pg);
   await synced(A.pg);
   ok('ログインするとログイン画面が閉じ、同期済みになる', (await A.pg.$eval('#login', (e) => e.hidden)) && (await A.pg.textContent('#syncBtn')) === 'ログアウト');
+  ok('ログインすると、シフト表が見える', (await A.pg.isVisible('#grid')) && (await A.pg.isVisible('#solveBtn')));
   ok('クラウドが空だと、この端末のデータ（スタッフと最初の表）が送られる', fb.doc && saved().staff.length === 7 && Object.values(saved().months)[0].shifts, fb.doc && Object.keys(saved()));
 
   const puts0 = fb.puts;
@@ -445,11 +451,21 @@ const ok = (name, cond, extra) => {
   await A.pg.click('#syncBtn');
   ok('ログアウトは確認ポップが出る', !(await A.pg.$eval('#modal', (e) => e.hidden)));
   await A.pg.click('#modalOk');
-  ok('ログアウトすると「ログイン」に戻り、以後の変更はクラウドに送られない', (await A.pg.textContent('#syncBtn')) === 'ログイン' && /未ログイン/.test(await statText(A.pg)));
-  const putsOut = fb.puts;
-  await A.pg.selectOption(`${evFirst} .evAdd`, '22');
-  await new Promise((r) => setTimeout(r, 1500));
-  ok('ログアウト中の変更は、クラウドには送られない', fb.puts === putsOut);
+  ok('ログアウトすると、シフト表が隠れてログイン画面に戻る', !(await A.pg.isVisible('#grid')) && !(await A.pg.$eval('#login', (e) => e.hidden)) && !/テスト太郎|テスト花子/.test(await A.pg.evaluate(() => document.body.innerText)));
+  await login(A.pg);
+  await synced(A.pg);
+  ok('もう一度ログインすると、同じデータが見える', (await A.pg.isVisible('#grid')) && (await staffNames(A.pg))[0] === 'テスト太郎');
+
+  // ログインしていない端末に、前から使っていたデータが残っていても、画面には出ない
+  const C = await openDevice({ staff: [{ id: 'a1', name: 'ヒミツ太郎', points: 3, prevStreak: 0 }], needWeekday: 7, needHigh: 9, months: {} });
+  ok('この端末に残っているデータも、ログインするまでは画面に出ない', !(await C.pg.isVisible('#grid')) && !/ヒミツ太郎/.test(await C.pg.evaluate(() => document.body.innerText)));
+  ok('期限切れ・失効のとき（ログイン情報が無効）も、ログイン画面に戻る', await (async () => {
+    await C.ctx.addInitScript(() => localStorage.setItem('shift-work-session', JSON.stringify({ refreshToken: 'bad', email: 'x@y.z' })));
+    await C.ctx.route('https://securetoken.googleapis.com/**', (r) => r.fulfill({ status: 400, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: '{"error":{"message":"TOKEN_EXPIRED"}}' }));
+    await C.pg.reload();
+    await C.pg.waitForFunction(() => !document.getElementById('login').hidden);
+    return !(await C.pg.isVisible('#grid'));
+  })());
   ok('同期のテスト中にエラーがない', A.errs.length === 0 && B.errs.length === 0, [A.errs, B.errs]);
   for (const c of devices) await c.close();
 

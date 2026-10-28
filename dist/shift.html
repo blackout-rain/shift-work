@@ -186,6 +186,8 @@ details[open] summary{margin-bottom:8px}
 .modal-box h3{margin:0;font-size:16px}
 .modal-box p{margin:0;font-size:13.5px;color:var(--muted)}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.modal.solid{background:var(--bg)}
+.locked .app{display:none}
 .btn.solid-danger{background:var(--bad);border-color:var(--bad);color:var(--surface);font-weight:700}
 
 @media print{
@@ -293,15 +295,14 @@ details[open] summary{margin-bottom:8px}
     </div>
   </div>
 </div>
-<div id="login" class="modal" hidden>
+<div id="login" class="modal solid" hidden>
   <form class="modal-box" id="loginForm" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
     <h3 id="loginTitle">ログイン</h3>
-    <p>どの端末からでも同じデータを見られるように、専用のアカウントでログインします。</p>
+    <p>シフト表を見るには、専用のアカウントでログインしてください。どの端末からでも同じデータが見られます。</p>
     <label class="fld">メールアドレス<input id="loginEmail" type="email" autocomplete="username" required></label>
     <label class="fld">パスワード<input id="loginPass" type="password" autocomplete="current-password" required></label>
     <p class="loginErr" id="loginErr" role="alert"></p>
     <div class="modal-actions">
-      <button type="button" class="btn" id="loginLater">あとで</button>
       <button class="btn main" id="loginOk">ログイン</button>
     </div>
   </form>
@@ -1993,9 +1994,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
       clearTimeout(retryTimer);
       retryTimer = setTimeout(() => (meta.dirty ? push() : pull(true)), 20000);
     } else if (e.code === 'signedout') {
-      renderSyncUi();
-      setStat('off', '未ログイン');
-      showLogin(e.message);
+      lock(e.message);
     } else {
       setStat('warn', e.message);
       toast(e.message);
@@ -2068,7 +2067,20 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     }
   }
 
-  /* ログイン */
+  /* ログイン（ログインするまでは、シフト表などの中身は画面に出さない） */
+  function lock(msg) {
+    document.body.classList.add('locked');
+    clearTimeout(syncTimer);
+    clearTimeout(retryTimer);
+    renderSyncUi();
+    setStat('off', '未ログイン');
+    showLogin(msg);
+  }
+  function unlock() {
+    document.body.classList.remove('locked');
+    hideLogin();
+    renderSyncUi();
+  }
   function showLogin(msg) {
     $('loginErr').textContent = msg || '';
     $('login').hidden = false;
@@ -2088,8 +2100,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     try {
       await sync.signIn($('loginEmail').value, $('loginPass').value);
       try { localStorage.setItem('shift-work-last-email', sync.email()); } catch (err) { /* 無くてよい */ }
-      hideLogin();
-      renderSyncUi();
+      unlock();
       await pull();
     } catch (err) {
       $('loginErr').textContent = err.message;
@@ -2097,25 +2108,16 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
       btn.disabled = false;
     }
   };
-  const loginLater = () => {
-    hideLogin();
-    setStat('off', '未ログイン（この端末にだけ保存）');
-    if (firstRun && !md().shifts) solve();
-  };
-  $('loginLater').onclick = loginLater;
-  $('login').addEventListener('keydown', (e) => { if (e.key === 'Escape') loginLater(); });
   $('syncBtn').onclick = async () => {
-    if (!sync.signedIn()) return showLogin();
+    if (!sync.signedIn()) return lock();
     const yes = await ask({
       title: 'ログアウトしますか？',
-      body: 'この端末のデータは残ります。ログインし直すまで、クラウドとの同期は止まります。',
+      body: '画面からシフトが見えなくなります。もう一度ログインすると、クラウドの内容が表示されます。',
       ok: 'ログアウト',
     });
     if (!yes) return;
     sync.signOut();
-    clearTimeout(syncTimer);
-    renderSyncUi();
-    setStat('off', '未ログイン（この端末にだけ保存）');
+    lock();
   };
   // 別の端末で変更していることがあるので、画面に戻ったときに最新を確認する。ネットワークが戻ったら未送信分を送る
   document.addEventListener('visibilitychange', () => {
@@ -2135,8 +2137,7 @@ window.SHIFT_SYNC = window.SHIFT_SYNC || {
     setStat('busy', '読み込み中…');
     pull();
   } else {
-    setStat('off', '未ログイン');
-    showLogin();
+    lock();
   }
 })();
 </script>

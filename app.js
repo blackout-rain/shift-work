@@ -689,9 +689,7 @@
       clearTimeout(retryTimer);
       retryTimer = setTimeout(() => (meta.dirty ? push() : pull(true)), 20000);
     } else if (e.code === 'signedout') {
-      renderSyncUi();
-      setStat('off', '未ログイン');
-      showLogin(e.message);
+      lock(e.message);
     } else {
       setStat('warn', e.message);
       toast(e.message);
@@ -764,7 +762,20 @@
     }
   }
 
-  /* ログイン */
+  /* ログイン（ログインするまでは、シフト表などの中身は画面に出さない） */
+  function lock(msg) {
+    document.body.classList.add('locked');
+    clearTimeout(syncTimer);
+    clearTimeout(retryTimer);
+    renderSyncUi();
+    setStat('off', '未ログイン');
+    showLogin(msg);
+  }
+  function unlock() {
+    document.body.classList.remove('locked');
+    hideLogin();
+    renderSyncUi();
+  }
   function showLogin(msg) {
     $('loginErr').textContent = msg || '';
     $('login').hidden = false;
@@ -784,8 +795,7 @@
     try {
       await sync.signIn($('loginEmail').value, $('loginPass').value);
       try { localStorage.setItem('shift-work-last-email', sync.email()); } catch (err) { /* 無くてよい */ }
-      hideLogin();
-      renderSyncUi();
+      unlock();
       await pull();
     } catch (err) {
       $('loginErr').textContent = err.message;
@@ -793,25 +803,16 @@
       btn.disabled = false;
     }
   };
-  const loginLater = () => {
-    hideLogin();
-    setStat('off', '未ログイン（この端末にだけ保存）');
-    if (firstRun && !md().shifts) solve();
-  };
-  $('loginLater').onclick = loginLater;
-  $('login').addEventListener('keydown', (e) => { if (e.key === 'Escape') loginLater(); });
   $('syncBtn').onclick = async () => {
-    if (!sync.signedIn()) return showLogin();
+    if (!sync.signedIn()) return lock();
     const yes = await ask({
       title: 'ログアウトしますか？',
-      body: 'この端末のデータは残ります。ログインし直すまで、クラウドとの同期は止まります。',
+      body: '画面からシフトが見えなくなります。もう一度ログインすると、クラウドの内容が表示されます。',
       ok: 'ログアウト',
     });
     if (!yes) return;
     sync.signOut();
-    clearTimeout(syncTimer);
-    renderSyncUi();
-    setStat('off', '未ログイン（この端末にだけ保存）');
+    lock();
   };
   // 別の端末で変更していることがあるので、画面に戻ったときに最新を確認する。ネットワークが戻ったら未送信分を送る
   document.addEventListener('visibilitychange', () => {
@@ -831,7 +832,6 @@
     setStat('busy', '読み込み中…');
     pull();
   } else {
-    setStat('off', '未ログイン');
-    showLogin();
+    lock();
   }
 })();
