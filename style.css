@@ -46,6 +46,17 @@ h1{font-size:20px;margin:0;font-weight:700}
 .btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 14px;font-weight:500;cursor:pointer;font-size:14px}
 .btn:hover{border-color:var(--accent)}
 .btn.main{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700}
+.sync{display:inline-flex;align-items:center;gap:8px}
+.syncStat{font-size:12.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.syncStat::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.syncStat.ok::before{background:var(--accent)}
+.syncStat.busy::before{background:var(--warn)}
+.syncStat.warn{color:var(--bad)}
+.syncStat.warn::before{background:var(--bad)}
+.btn.small{padding:2px 10px;font-size:12.5px}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+.fld input{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:7px 9px;font-size:15px;color:var(--ink)}
+.loginErr{color:var(--bad)!important;min-height:1.3em}
 .from{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 .from select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:14px;color:var(--ink)}
 .from select:disabled{opacity:.5}
@@ -173,7 +184,7 @@ details[open] summary{margin-bottom:8px}
 @media print{
   @page{size:A4 landscape;margin:10mm}
   body{background:#fff;color:#000;padding:0}
-  .top .actions,.banner,.legend,.settings,.modal,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
+  .sync,.top .actions,.banner,.legend,.settings,.modal,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
   .top{margin-bottom:8px}
   .board{border:0;box-shadow:none}
   table.g{border-collapse:collapse;font-size:12px}

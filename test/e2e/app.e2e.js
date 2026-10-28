@@ -324,6 +324,132 @@ const ok = (name, cond, extra) => {
   ok('スマホでエラーなし', errs.length === 0, errs);
   await ctx.close();
 
+  // ---- 端末をまたぐ同期（偽のFirebaseサーバーで確かめる） ----
+  const fb = { doc: null, updateTime: null, tick: 0, puts: 0, offline: false, users: { 'me@example.com': 'secret' } };
+  const fbRoute = async (route) => {
+    const req = route.request();
+    const u = new URL(req.url());
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
+    const send = (status, body) => route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    if (fb.offline) return route.abort('failed');
+    if (u.hostname === 'identitytoolkit.googleapis.com') {
+      const b = JSON.parse(req.postData());
+      if (fb.users[b.email] !== b.password) return send(400, { error: { message: 'INVALID_LOGIN_CREDENTIALS' } });
+      return send(200, { idToken: 't', refreshToken: 'r', expiresIn: '3600', email: b.email });
+    }
+    if (u.hostname === 'securetoken.googleapis.com') return send(200, { id_token: 't', refresh_token: 'r', expires_in: '3600' });
+    if (req.method() === 'GET') {
+      if (!fb.doc) return send(404, { error: { status: 'NOT_FOUND' } });
+      return send(200, { fields: { json: { stringValue: fb.doc } }, updateTime: fb.updateTime });
+    }
+    const exists = u.searchParams.get('currentDocument.exists');
+    const ut = u.searchParams.get('currentDocument.updateTime');
+    if ((exists === 'false' && fb.doc) || (ut && ut !== fb.updateTime)) return send(409, { error: { status: 'ABORTED' } });
+    fb.doc = JSON.parse(req.postData()).fields.json.stringValue;
+    fb.updateTime = '2026-10-28T00:00:' + String(++fb.tick).padStart(2, '0') + 'Z';
+    fb.puts++;
+    return send(200, { updateTime: fb.updateTime });
+  };
+  const devices = [];
+  async function openDevice() {
+    const c = await browser.newContext({ viewport: { width: 1100, height: 900 } }); // 端末ごとに保存領域が別
+    await c.route(/googleapis\.com/, fbRoute);
+    await c.addInitScript(() => { window.SHIFT_SYNC = { apiKey: 'k', projectId: 'p' }; });
+    const p = await c.newPage();
+    const e = [];
+    p.on('pageerror', (x) => e.push(String(x)));
+    await p.goto(url);
+    await p.waitForSelector('#grid table');
+    devices.push(c);
+    return { ctx: c, pg: p, errs: e };
+  }
+  const statText = (p) => p.textContent('#syncStat');
+  const synced = (p) => p.waitForFunction(() => /同期済み/.test(document.getElementById('syncStat').textContent), null, { timeout: 8000 });
+  const saved = () => JSON.parse(fb.doc);
+  const login = async (p, pass = 'secret') => {
+    await p.fill('#loginEmail', 'me@example.com');
+    await p.fill('#loginPass', pass);
+    await p.click('#loginOk');
+  };
+  const evFirst = '#eventRows .ev-row:first-child';
+  const staffNames = (p) => p.$$eval('#grid tbody td.n', (e) => e.map((x) => x.firstChild.textContent));
+
+  const A = await openDevice();
+  ok('同期の設定があり未ログインなら、ログイン画面が出る', !(await A.pg.$eval('#login', (e) => e.hidden)) && /未ログイン/.test(await statText(A.pg)));
+  await login(A.pg, 'wrong');
+  await A.pg.waitForFunction(() => document.getElementById('loginErr').textContent.length > 0);
+  ok('パスワードが違うとエラーが出て、ログイン画面は閉じない', /メールアドレスかパスワードが違います/.test(await A.pg.textContent('#loginErr')) && !(await A.pg.$eval('#login', (e) => e.hidden)));
+  await login(A.pg);
+  await synced(A.pg);
+  ok('ログインするとログイン画面が閉じ、同期済みになる', (await A.pg.$eval('#login', (e) => e.hidden)) && (await A.pg.textContent('#syncBtn')) === 'ログアウト');
+  ok('クラウドが空だと、この端末のデータ（スタッフと最初の表）が送られる', fb.doc && saved().staff.length === 7 && Object.values(saved().months)[0].shifts, fb.doc && Object.keys(saved()));
+
+  const puts0 = fb.puts;
+  await A.pg.selectOption(`${evFirst} .evAdd`, '12');
+  await synced(A.pg);
+  await A.pg.waitForFunction(() => /同期済み/.test(document.getElementById('syncStat').textContent));
+  const monthOf = () => Object.values(saved().months)[0];
+  const firstId = () => saved().staff[0].id;
+  ok('変更すると自動でクラウドに保存される（イベント日が入る）', fb.puts > puts0 && monthOf().off[firstId()]['12'] === 3, { puts: fb.puts, puts0 });
+
+  const B = await openDevice();
+  await login(B.pg);
+  await synced(B.pg);
+  const gridA = await A.pg.$$eval('#grid tbody tr', (trs) => trs.map((tr) => Array.from(tr.querySelectorAll('td.cell')).map((td) => td.className).join('|')));
+  const gridB = await B.pg.$$eval('#grid tbody tr', (trs) => trs.map((tr) => Array.from(tr.querySelectorAll('td.cell')).map((td) => td.className).join('|')));
+  ok('別の端末でログインすると、同じシフト表とイベント日が見える', gridA.join('\n') === gridB.join('\n') && (await B.pg.$$eval(`${evFirst} .chip`, (e) => e.length)) === 1);
+  ok('2台目は初期データで上書きせず、クラウドのデータを使う', (await staffCount(B.pg)) === 7 && saved().staff.length === 7);
+
+  await B.pg.fill('#staffList .staff-row:first-child [data-f="name"]', 'テスト太郎');
+  await B.pg.press('#staffList .staff-row:first-child [data-f="name"]', 'Tab');
+  await synced(B.pg);
+  await B.pg.waitForFunction(() => /同期済み/.test(document.getElementById('syncStat').textContent));
+  await A.pg.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); // 画面に戻ったときの確認
+  await A.pg.waitForFunction(() => /テスト太郎/.test(document.getElementById('grid').textContent), null, { timeout: 8000 });
+  ok('別の端末での変更が、画面に戻ったときに反映される', (await staffNames(A.pg))[0] === 'テスト太郎');
+
+  await A.pg.reload();
+  await A.pg.waitForSelector('#grid table');
+  await synced(A.pg);
+  ok('再読み込みしてもログインしたままで、同じデータが見える', (await A.pg.$eval('#login', (e) => e.hidden)) && (await staffNames(A.pg))[0] === 'テスト太郎');
+
+  fb.offline = true;
+  await A.pg.selectOption(`${evFirst} .evAdd`, '20');
+  await A.pg.waitForFunction(() => /未保存/.test(document.getElementById('syncStat').textContent), null, { timeout: 8000 });
+  ok('通信できないときは「未保存」と表示し、この端末には保存される', /未保存/.test(await statText(A.pg)) && (await A.pg.evaluate(() => JSON.parse(localStorage.getItem('shift-work-v1')).months)) !== null);
+  fb.offline = false;
+  await A.pg.evaluate(() => window.dispatchEvent(new Event('online')));
+  await synced(A.pg);
+  ok('通信が戻ると未保存の変更が送られる', monthOf().off[firstId()]['20'] === 3);
+
+  // 衝突: A が通信できない間に編集し、その間に B も編集 → A は未送信の変更を退避し、B の内容に合わせる
+  fb.offline = true;
+  await A.pg.selectOption(`${evFirst} .evAdd`, '21');
+  await A.pg.waitForFunction(() => /未保存/.test(document.getElementById('syncStat').textContent), null, { timeout: 8000 });
+  fb.offline = false;
+  await B.pg.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await B.pg.waitForFunction(() => /同期済み/.test(document.getElementById('syncStat').textContent));
+  await B.pg.fill('#staffList .staff-row:nth-child(2) [data-f="name"]', 'テスト花子');
+  await B.pg.press('#staffList .staff-row:nth-child(2) [data-f="name"]', 'Tab');
+  await B.pg.waitForFunction(() => /同期済み/.test(document.getElementById('syncStat').textContent));
+  await new Promise((r) => setTimeout(r, 1200));
+  await A.pg.evaluate(() => window.dispatchEvent(new Event('online')));
+  await A.pg.waitForFunction(() => /テスト花子/.test(document.getElementById('grid').textContent), null, { timeout: 8000 });
+  const backup = await A.pg.evaluate(() => localStorage.getItem('shift-work-backup-v1'));
+  ok('同時に編集して衝突したら、クラウドの内容に合わせ、この端末の未送信分を退避する', (await staffNames(A.pg))[1] === 'テスト花子' && backup && /"21":3/.test(backup) && !monthOf().off[firstId()]['21'], { names: await staffNames(A.pg), hasBackup: !!backup });
+
+  await A.pg.click('#syncBtn');
+  ok('ログアウトは確認ポップが出る', !(await A.pg.$eval('#modal', (e) => e.hidden)));
+  await A.pg.click('#modalOk');
+  ok('ログアウトすると「ログイン」に戻り、以後の変更はクラウドに送られない', (await A.pg.textContent('#syncBtn')) === 'ログイン' && /未ログイン/.test(await statText(A.pg)));
+  const putsOut = fb.puts;
+  await A.pg.selectOption(`${evFirst} .evAdd`, '22');
+  await new Promise((r) => setTimeout(r, 1500));
+  ok('ログアウト中の変更は、クラウドには送られない', fb.puts === putsOut);
+  ok('同期のテスト中にエラーがない', A.errs.length === 0 && B.errs.length === 0, [A.errs, B.errs]);
+  for (const c of devices) await c.close();
+
   await browser.close();
   console.log(failed ? `\n${failed} 件失敗` : '\nすべて成功');
   process.exit(failed ? 1 : 0);

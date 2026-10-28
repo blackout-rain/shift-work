@@ -53,6 +53,17 @@ h1{font-size:20px;margin:0;font-weight:700}
 .btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 14px;font-weight:500;cursor:pointer;font-size:14px}
 .btn:hover{border-color:var(--accent)}
 .btn.main{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700}
+.sync{display:inline-flex;align-items:center;gap:8px}
+.syncStat{font-size:12.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.syncStat::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.syncStat.ok::before{background:var(--accent)}
+.syncStat.busy::before{background:var(--warn)}
+.syncStat.warn{color:var(--bad)}
+.syncStat.warn::before{background:var(--bad)}
+.btn.small{padding:2px 10px;font-size:12.5px}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+.fld input{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:7px 9px;font-size:15px;color:var(--ink)}
+.loginErr{color:var(--bad)!important;min-height:1.3em}
 .from{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
 .from select{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:14px;color:var(--ink)}
 .from select:disabled{opacity:.5}
@@ -180,7 +191,7 @@ details[open] summary{margin-bottom:8px}
 @media print{
   @page{size:A4 landscape;margin:10mm}
   body{background:#fff;color:#000;padding:0}
-  .top .actions,.banner,.legend,.settings,.modal,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
+  .sync,.top .actions,.banner,.legend,.settings,.modal,#prevMonth,#nextMonth,tfoot,.cnt{display:none!important}
   .top{margin-bottom:8px}
   .board{border:0;box-shadow:none}
   table.g{border-collapse:collapse;font-size:12px}
@@ -206,6 +217,10 @@ details[open] summary{margin-bottom:8px}
 <div class="app">
   <header class="top">
     <h1>シフト自動作成</h1>
+    <div class="sync" id="sync" hidden>
+      <span class="syncStat" id="syncStat" role="status"></span>
+      <button class="btn small" id="syncBtn"></button>
+    </div>
     <div class="month">
       <button class="btn icon" id="prevMonth" aria-label="前の月">‹</button>
       <strong id="monthLabel"></strong>
@@ -264,7 +279,7 @@ details[open] summary{margin-bottom:8px}
     </details>
     <div class="foot">
       <button class="btn danger" id="resetBtn">すべて初期状態に戻す</button>
-      <span class="note">入力内容はこのブラウザにだけ保存されます。</span>
+      <span class="note" id="saveNote">入力内容はこのブラウザにだけ保存されます。</span>
     </div>
   </section>
 </div>
@@ -278,6 +293,214 @@ details[open] summary{margin-bottom:8px}
     </div>
   </div>
 </div>
+<div id="login" class="modal" hidden>
+  <form class="modal-box" id="loginForm" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <h3 id="loginTitle">ログイン</h3>
+    <p>どの端末からでも同じデータを見られるように、専用のアカウントでログインします。</p>
+    <label class="fld">メールアドレス<input id="loginEmail" type="email" autocomplete="username" required></label>
+    <label class="fld">パスワード<input id="loginPass" type="password" autocomplete="current-password" required></label>
+    <p class="loginErr" id="loginErr" role="alert"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="loginLater">あとで</button>
+      <button class="btn main" id="loginOk">ログイン</button>
+    </div>
+  </form>
+</div>
+<script>
+// 端末をまたいでデータを同期するための Firebase の設定。apiKey と projectId が空の間は同期せず、
+// これまでどおりブラウザの中だけに保存する。設定のしかたは README の「データの同期」を参照。
+// ここの値は秘密ではない（データはログインと Firestore のルールで守る）。
+window.SHIFT_SYNC = window.SHIFT_SYNC || {
+  apiKey: '',
+  projectId: '',
+};
+</script>
+<script>
+/*
+ * どの端末からでも同じデータを見られるようにする（Firebase の REST API を直接使う。外部ライブラリなし）
+ *   - ログイン: Firebase Authentication（メールとパスワード）
+ *   - 保存先:  Firestore の shift/main という1つの文書に、アプリのデータをJSON文字列で入れる
+ * 設定（apiKey・projectId）が空なら enabled が false になり、アプリはこれまでどおりブラウザ内だけに保存する。
+ *
+ * ShiftSync.create(config, { fetch, storage, now }) → {
+ *   enabled, signedIn(), email(), signIn(email, password), signOut(),
+ *   load()  → { exists, json, updateTime }
+ *   save(json, updateTime) → { updateTime }   updateTime が null なら新規作成。他で更新されていたら { conflict: true } を投げる
+ * }
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ShiftSync = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const SESSION_KEY = 'shift-work-session';
+  const DOC = 'shift/main';
+
+  // 画面に出すエラー文。code は Error.code に入る
+  const AUTH_MESSAGES = {
+    INVALID_LOGIN_CREDENTIALS: 'メールアドレスかパスワードが違います',
+    INVALID_PASSWORD: 'メールアドレスかパスワードが違います',
+    EMAIL_NOT_FOUND: 'メールアドレスかパスワードが違います',
+    INVALID_EMAIL: 'メールアドレスの形式が正しくありません',
+    MISSING_PASSWORD: 'パスワードを入力してください',
+    USER_DISABLED: 'このアカウントは無効になっています',
+    TOO_MANY_ATTEMPTS_TRY_LATER: '試行回数が多すぎます。しばらく待ってからやり直してください',
+  };
+
+  function fail(code, message, extra) {
+    const e = new Error(message);
+    e.code = code;
+    return Object.assign(e, extra);
+  }
+
+  function create(config, deps) {
+    const cfg = config || {};
+    const d = Object.assign({}, deps);
+    const doFetch = d.fetch || ((...a) => fetch(...a));
+    const store = d.storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+    const now = d.now || (() => Date.now());
+    const enabled = !!(cfg.apiKey && cfg.projectId);
+
+    let session = null; // { refreshToken, email }
+    let idToken = null;
+    let expiresAt = 0;
+
+    try {
+      const s = store && JSON.parse(store.getItem(SESSION_KEY));
+      if (s && s.refreshToken) session = s;
+    } catch (e) { /* ログイン情報が無い・壊れている場合は未ログイン */ }
+
+    const remember = () => {
+      try {
+        if (!store) return;
+        if (session) store.setItem(SESSION_KEY, JSON.stringify(session));
+        else store.removeItem(SESSION_KEY);
+      } catch (e) { /* 保存できなくても動作は続ける */ }
+    };
+
+    async function json(res) {
+      try { return await res.json(); } catch (e) { return {}; }
+    }
+
+    async function signIn(email, password) {
+      if (!enabled) throw fail('disabled', '同期の設定がありません');
+      let res;
+      try {
+        res = await doFetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + encodeURIComponent(cfg.apiKey), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: String(email).trim(), password, returnSecureToken: true }),
+        });
+      } catch (e) {
+        throw fail('network', '通信できませんでした。ネットワークを確認してください');
+      }
+      const body = await json(res);
+      if (!res.ok) {
+        const key = String((body.error && body.error.message) || '').split(' ')[0];
+        throw fail(key || 'auth', AUTH_MESSAGES[key] || 'ログインできませんでした（' + (key || res.status) + '）');
+      }
+      session = { refreshToken: body.refreshToken, email: body.email || String(email).trim() };
+      idToken = body.idToken;
+      expiresAt = now() + (Number(body.expiresIn) || 3600) * 1000 - 60000;
+      remember();
+    }
+
+    function signOut() {
+      session = null;
+      idToken = null;
+      expiresAt = 0;
+      remember();
+    }
+
+    async function token() {
+      if (!session) throw fail('signedout', 'ログインしていません');
+      if (idToken && now() < expiresAt) return idToken;
+      let res;
+      try {
+        res = await doFetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(cfg.apiKey), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(session.refreshToken),
+        });
+      } catch (e) {
+        throw fail('network', '通信できませんでした');
+      }
+      const body = await json(res);
+      if (!res.ok) {
+        // 無効になったログイン（パスワード変更など）は、ログインし直してもらう
+        signOut();
+        throw fail('signedout', 'ログインの有効期限が切れました。もう一度ログインしてください');
+      }
+      idToken = body.id_token;
+      if (body.refresh_token) session.refreshToken = body.refresh_token;
+      expiresAt = now() + (Number(body.expires_in) || 3600) * 1000 - 60000;
+      remember();
+      return idToken;
+    }
+
+    const docUrl = () => 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) + '/databases/(default)/documents/' + DOC;
+
+    async function request(url, init) {
+      const t = await token();
+      let res;
+      try {
+        res = await doFetch(url, Object.assign({}, init, { headers: Object.assign({ Authorization: 'Bearer ' + t }, init && init.headers) }));
+      } catch (e) {
+        throw fail('network', '通信できませんでした');
+      }
+      return res;
+    }
+
+    function check(res, body) {
+      if (res.ok) return;
+      const status = (body.error && body.error.status) || '';
+      if (res.status === 401) {
+        idToken = null; // 次回は取り直す
+        throw fail('auth', 'ログインし直してください');
+      }
+      if (res.status === 403 || status === 'PERMISSION_DENIED') throw fail('denied', 'このアカウントには保存の権限がありません（Firestoreのルールを確認してください）');
+      throw fail('server', '保存先でエラーが起きました（' + (status || res.status) + '）');
+    }
+
+    async function load() {
+      const res = await request(docUrl(), { method: 'GET' });
+      if (res.status === 404) return { exists: false, json: null, updateTime: null };
+      const body = await json(res);
+      check(res, body);
+      const f = body.fields && body.fields.json;
+      return { exists: true, json: f && f.stringValue !== undefined ? f.stringValue : null, updateTime: body.updateTime || null };
+    }
+
+    async function save(text, updateTime) {
+      const precondition = updateTime ? 'currentDocument.updateTime=' + encodeURIComponent(updateTime) : 'currentDocument.exists=false';
+      const res = await request(docUrl() + '?updateMask.fieldPaths=json&' + precondition, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { json: { stringValue: text } } }),
+      });
+      const body = await json(res);
+      if (res.status === 409 || (body.error && (body.error.status === 'ABORTED' || body.error.status === 'FAILED_PRECONDITION' || body.error.status === 'ALREADY_EXISTS'))) {
+        throw fail('conflict', '他の端末で先に更新されています', { conflict: true });
+      }
+      check(res, body);
+      return { updateTime: body.updateTime || null };
+    }
+
+    return {
+      enabled,
+      signedIn: () => !!session,
+      email: () => (session ? session.email : ''),
+      signIn,
+      signOut,
+      load,
+      save,
+    };
+  }
+
+  return { create };
+});
+</script>
 <script>
 /*
  * シフト自動作成の計算部分（ブラウザでも Node でも動く）
@@ -1106,8 +1329,13 @@ details[open] summary{margin-bottom:8px}
     } catch (e) { /* 保存データが無い・壊れている場合は初期状態で始める */ }
     return null;
   }
-  function save() {
+  function saveLocal() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 保存できなくても動作は続ける */ }
+  }
+  // 変更のたびに、この端末に保存し、ログイン中ならクラウドにも送る（markDirty）
+  function save() {
+    saveLocal();
+    markDirty();
   }
 
   let state = load();
@@ -1709,10 +1937,207 @@ details[open] summary{margin-bottom:8px}
     solve();
   };
 
+  /* ---------- 端末をまたぐ同期 ---------- */
+  // ログインしている間は、変更をクラウド（Firestore）に自動で保存し、別の端末の変更を読み込む。
+  // 設定が空・公開ページ（sandboxed）では何もせず、これまでどおりこの端末の中だけに保存する。
+  const sync = ShiftSync.create(sandboxed ? {} : window.SHIFT_SYNC);
+  const META_KEY = 'shift-work-sync-v1'; // この端末が最後に同期した時刻と、未送信の変更があるか
+  const BACKUP_KEY = 'shift-work-backup-v1'; // クラウドの内容に置き換えたとき、この端末の未送信データを退避する
+  const readMeta = () => {
+    try {
+      const m = JSON.parse(localStorage.getItem(META_KEY));
+      if (m && typeof m === 'object') return m;
+    } catch (e) { /* 初めての端末 */ }
+    return null;
+  };
+  // 同期の記録が無い端末でも、すでに使っていたデータがあれば「未送信」とみなす
+  let meta = readMeta() || { updateTime: null, dirty: !firstRun };
+  const writeMeta = () => {
+    try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) { /* 保存できなくても動作は続ける */ }
+  };
+  let syncBusy = false;
+  let syncRev = 0; // 変更のたびに増やし、送信中の変更を取りこぼさない
+  let syncTimer = null;
+  let retryTimer = null;
+
+  function setStat(kind, text) {
+    const el = $('syncStat');
+    el.className = 'syncStat ' + kind;
+    el.textContent = text;
+  }
+  function renderSyncUi() {
+    $('sync').hidden = !sync.enabled;
+    if (!sync.enabled) return;
+    $('syncBtn').textContent = sync.signedIn() ? 'ログアウト' : 'ログイン';
+    $('syncBtn').title = sync.signedIn() ? sync.email() + ' でログイン中' : '';
+    $('saveNote').textContent = sync.signedIn()
+      ? '入力内容はこの端末に保存され、ログイン中はクラウドにも自動で保存されます（どの端末からでも同じ内容が見られます）。'
+      : '入力内容はこの端末にだけ保存されます。ログインすると、クラウドにも保存されます。';
+  }
+
+  function markDirty() {
+    if (!sync.enabled) return;
+    meta.dirty = true;
+    writeMeta();
+    syncRev++;
+    if (!sync.signedIn()) return setStat('off', '未ログイン（この端末にだけ保存）');
+    setStat('busy', '保存待ち…');
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(push, 700);
+  }
+
+  // 失敗の種類ごとに、表示と次の動きを決める
+  function syncError(e) {
+    if (e.code === 'network') {
+      setStat('warn', meta.dirty ? '未保存（通信できません）' : '通信できません');
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => (meta.dirty ? push() : pull(true)), 20000);
+    } else if (e.code === 'signedout') {
+      renderSyncUi();
+      setStat('off', '未ログイン');
+      showLogin(e.message);
+    } else {
+      setStat('warn', e.message);
+      toast(e.message);
+    }
+  }
+
+  async function push() {
+    if (!sync.enabled || !sync.signedIn() || !meta.dirty || syncBusy) return;
+    syncBusy = true;
+    const rev = syncRev;
+    setStat('busy', '保存中…');
+    try {
+      const r = await sync.save(JSON.stringify(state), meta.updateTime);
+      meta.updateTime = r.updateTime;
+      if (rev === syncRev) meta.dirty = false;
+      writeMeta();
+      setStat('ok', '同期済み');
+    } catch (e) {
+      syncBusy = false;
+      return e.conflict ? pull() : syncError(e);
+    }
+    syncBusy = false;
+    if (meta.dirty) push(); // 送信中にさらに変更があった
+  }
+
+  const validState = (s) => s && Array.isArray(s.staff) && s.staff.length && s.months && typeof s.months === 'object';
+
+  async function pull(quiet) {
+    if (!sync.enabled || !sync.signedIn() || syncBusy) return;
+    syncBusy = true;
+    setStat('busy', '読み込み中…');
+    try {
+      const r = await sync.load();
+      syncBusy = false;
+      if (!r.exists) {
+        // クラウドがまだ空なら、この端末のデータを最初のデータとして送る
+        meta.updateTime = null;
+        meta.dirty = true;
+        writeMeta();
+        if (firstRun && !md().shifts) solve(); // 初めての端末は、最初の表を作る（作ると自動で送られる）
+        else push();
+        return;
+      }
+      if (r.updateTime === meta.updateTime) {
+        if (meta.dirty) push();
+        else setStat('ok', '同期済み');
+        return;
+      }
+      // クラウドの方が新しい（または、この端末が初めて同期する）ので、クラウドの内容に合わせる
+      let remote = null;
+      try { remote = JSON.parse(r.json); } catch (e) { /* 読めない場合は下で止める */ }
+      if (!validState(remote)) return setStat('warn', 'クラウドのデータを読めませんでした');
+      if (meta.dirty) {
+        try { localStorage.setItem(BACKUP_KEY, JSON.stringify({ at: new Date().toISOString(), state })); } catch (e) { /* 退避できなくても続ける */ }
+      }
+      const hadLocalEdits = meta.dirty;
+      state = remote;
+      saveLocal();
+      meta = { updateTime: r.updateTime, dirty: false };
+      writeMeta();
+      ui.msg = null;
+      renderSettings();
+      renderAll();
+      setStat('ok', '同期済み');
+      if (hadLocalEdits) toast('クラウドの内容を読み込みました。この端末の未送信の変更は退避してあります');
+      else if (quiet) toast('別の端末での変更を読み込みました');
+    } catch (e) {
+      syncBusy = false;
+      syncError(e);
+    }
+  }
+
+  /* ログイン */
+  function showLogin(msg) {
+    $('loginErr').textContent = msg || '';
+    $('login').hidden = false;
+    try { $('loginEmail').value = $('loginEmail').value || localStorage.getItem('shift-work-last-email') || ''; } catch (e) { /* 無くてよい */ }
+    ($('loginEmail').value ? $('loginPass') : $('loginEmail')).focus();
+  }
+  function hideLogin() {
+    $('login').hidden = true;
+    $('loginPass').value = '';
+    $('loginErr').textContent = '';
+  }
+  $('loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $('loginOk');
+    btn.disabled = true;
+    $('loginErr').textContent = '';
+    try {
+      await sync.signIn($('loginEmail').value, $('loginPass').value);
+      try { localStorage.setItem('shift-work-last-email', sync.email()); } catch (err) { /* 無くてよい */ }
+      hideLogin();
+      renderSyncUi();
+      await pull();
+    } catch (err) {
+      $('loginErr').textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  const loginLater = () => {
+    hideLogin();
+    setStat('off', '未ログイン（この端末にだけ保存）');
+    if (firstRun && !md().shifts) solve();
+  };
+  $('loginLater').onclick = loginLater;
+  $('login').addEventListener('keydown', (e) => { if (e.key === 'Escape') loginLater(); });
+  $('syncBtn').onclick = async () => {
+    if (!sync.signedIn()) return showLogin();
+    const yes = await ask({
+      title: 'ログアウトしますか？',
+      body: 'この端末のデータは残ります。ログインし直すまで、クラウドとの同期は止まります。',
+      ok: 'ログアウト',
+    });
+    if (!yes) return;
+    sync.signOut();
+    clearTimeout(syncTimer);
+    renderSyncUi();
+    setStat('off', '未ログイン（この端末にだけ保存）');
+  };
+  // 別の端末で変更していることがあるので、画面に戻ったときに最新を確認する。ネットワークが戻ったら未送信分を送る
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && sync.signedIn() && !meta.dirty) pull(true);
+  });
+  window.addEventListener('online', () => {
+    if (sync.signedIn()) meta.dirty ? push() : pull(true);
+  });
+
   /* ---------- 起動 ---------- */
   renderSettings();
   renderAll();
-  if (firstRun) solve();
+  renderSyncUi();
+  if (!sync.enabled) {
+    if (firstRun) solve();
+  } else if (sync.signedIn()) {
+    setStat('busy', '読み込み中…');
+    pull();
+  } else {
+    setStat('off', '未ログイン');
+    showLogin();
+  }
 })();
 </script>
 </body>
