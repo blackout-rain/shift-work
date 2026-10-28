@@ -73,8 +73,10 @@
   }
 
   /* ---------- 希望休（1=絶対休み、2=できれば休み） ---------- */
+  // 3=イベント出勤（出勤扱い・連勤に数える・店のポイントには数えない）。希望休と同じ置き場に入れ、1日につきどれか1つ
   const HARD = 1;
   const SOFT = 2;
+  const EVENT = 3;
   const offKind = (id, d) => (md().off[id] && md().off[id][d]) || 0;
 
   /* ---------- 計算エンジンとの受け渡し ---------- */
@@ -88,6 +90,7 @@
       high: days.map(isHigh),
       off: state.staff.map((s) => days.map((d) => offKind(s.id, d) === HARD)),
       soft: state.staff.map((s) => days.map((d) => offKind(s.id, d) === SOFT)),
+      event: state.staff.map((s) => days.map((d) => offKind(s.id, d) === EVENT)),
       prevStreak: state.staff.map((s) => s.prevStreak || 0),
     };
   }
@@ -133,7 +136,8 @@
         let cls = 'cell' + lk(d);
         let body;
         let title = '';
-        if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
+        if (kind === EVENT) { cls += ' ev'; body = 'イ'; title = 'イベント出勤（店のポイントには数えません）'; cnt++; }
+        else if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
         else if (kind === SOFT && !works) { cls += ' s'; body = '<span class="scr">△</span><span class="prt">休</span>'; title = 'できれば休み'; }
         else if (works) { cls += ' w' + (kind === SOFT ? ' sm' : ''); body = '出'; title = kind === SOFT ? 'できれば休みの希望でしたが出勤です' : ''; }
         else body = '<span class="prt">休</span>';
@@ -158,6 +162,7 @@
     $('grid').innerHTML = h;
     renderBanner(res, made);
     renderOffForm();
+    renderEventForm();
     renderFromDay(made);
   }
 
@@ -251,6 +256,21 @@
     $('offMonth').textContent = (ui.month + 1) + '月';
   }
 
+  // イベント出勤の入力。日数に決まりがないので、スタッフごとに日付を好きなだけ追加・削除できる
+  function renderEventForm() {
+    const D = dayCount();
+    const dayLabel = (d) => d + '(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')';
+    $('eventRows').innerHTML = state.staff.map((s) => {
+      const days = eventDays(s.id);
+      const opts = ['<option value="">＋日付を追加</option>'];
+      for (let d = 1; d <= D; d++) if (!days.includes(d)) opts.push('<option value="' + d + '">' + dayLabel(d) + '</option>');
+      return '<div class="ev-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div><div class="chips">' +
+        days.map((d) => '<span class="chip">' + dayLabel(d) + '<button class="evDel" data-d="' + d + '" aria-label="' + esc(s.name) + 'の' + d + '日のイベントを削除" title="削除">×</button></span>').join('') +
+        '<select class="evAdd" aria-label="' + esc(s.name) + 'にイベントの日を追加">' + opts.join('') + '</select></div></div>';
+    }).join('');
+    $('evMonth').textContent = (ui.month + 1) + '月';
+  }
+
   function renderMonth() {
     $('monthLabel').textContent = ui.year + '年' + (ui.month + 1) + '月';
   }
@@ -282,27 +302,29 @@
   }
 
   /* ---------- 操作 ---------- */
-  // kind: 1=絶対休み 2=できれば休み 0=解除
+  // kind: 1=絶対休み 2=できれば休み 3=イベント出勤 0=解除
   function setOff(id, d, kind) {
     const m = md();
     m.off[id] = m.off[id] || {};
     if (!kind) delete m.off[id][d];
     else {
       m.off[id][d] = kind;
-      if (kind === HARD && m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
+      if ((kind === HARD || kind === EVENT) && m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
     }
   }
-  const offList = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y).map((day) => ({ day, kind: offKind(id, day) }));
+  const kindList = (id, pick) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y).map((day) => ({ day, kind: offKind(id, day) })).filter((x) => pick(x.kind));
+  const offList = (id) => kindList(id, (k) => k === HARD || k === SOFT); // 希望休の入力欄に出すもの
+  const eventDays = (id) => kindList(id, (k) => k === EVENT).map((x) => x.day);
 
   function toggleCell(i, d) {
     const s = state.staff[i];
     const m = md();
     if (ui.mode === 'off') {
-      // タップするたびに 絶対休み → できれば休み → なし
-      const next = { 0: HARD, [HARD]: SOFT, [SOFT]: 0 }[offKind(s.id, d)];
+      // タップするたびに 絶対休み → できれば休み → イベント → なし
+      const next = { 0: HARD, [HARD]: SOFT, [SOFT]: EVENT, [EVENT]: 0 }[offKind(s.id, d)];
       setOff(s.id, d, next);
     } else {
-      if (offKind(s.id, d) === HARD) return;
+      if (offKind(s.id, d) === HARD || offKind(s.id, d) === EVENT) return;
       if (!m.shifts) setRows(currentRows());
       if (!m.shifts[s.id]) m.shifts[s.id] = new Array(dayCount()).fill(0);
       m.shifts[s.id][d - 1] = m.shifts[s.id][d - 1] ? 0 : 1;
@@ -345,10 +367,17 @@
     if (c.reason === 'short') {
       const day = c.day + 1;
       const who = c.offStaff.map((i) => state.staff[i].name);
+      const ev = (c.eventStaff || []).map((i) => state.staff[i].name);
       html = '<span><b>' + (ui.month + 1) + '/' + day + '（' + WD[weekday(day)] + '）の必要' + c.need + 'ptを満たせません。</b>' +
-        'この日に出られる人の合計は最大' + c.maxPossible + 'ptです。</span>' +
+        'この日に店に出られる人の合計は最大' + c.maxPossible + 'ptです。</span>' +
         (who.length ? '<span>この日の希望休：' + esc(who.join('、')) + '</span>' : '') +
-        '<span>直前までの連勤制限も影響しています。この日の希望休を減らす、必要ptを下げる、スタッフを増やすのいずれかで解決します。</span>';
+        (ev.length ? '<span>この日のイベント出勤：' + esc(ev.join('、')) + '</span>' : '') +
+        '<span>直前までの連勤制限も影響しています。この日の希望休やイベントを減らす、必要ptを下げる、スタッフを増やすのいずれかで解決します。</span>';
+    } else if (c.reason === 'run') {
+      const day = c.day + 1;
+      const who = c.staff.map((i) => state.staff[i].name);
+      html = '<span><b>' + (ui.month + 1) + '/' + day + '（' + WD[weekday(day)] + '）に、' + esc(who.join('、')) + 'が3連勤になってしまいます。</b></span>' +
+        '<span>イベント出勤も連勤に数えます。イベントの日が3日以上続いているか、前月末からの連勤と重なっています。イベントの日を見直してください。</span>';
     } else {
       html = '<span><b>条件を満たす表を作れませんでした。</b>スタッフの設定を確認してください。</span>';
     }
@@ -368,12 +397,18 @@
       header.push({ text: d + '\n' + (hol ? '祝' : WD[w]), day: hol || w === 0 ? 'sun' : w === 6 ? 'sat' : '', high: isHigh(d) });
     }
     header.push({ text: '出勤' });
-    const body = state.staff.map((s, i) => ({
-      name: s.name,
-      cells: rows[i].map((v) => v === 1),
-      total: made ? rows[i].filter((v) => v === 1).length + '日' : '–',
-    }));
-    return { sheetName: (ui.month + 1) + '月', header, rows: body };
+    let hasEvent = false;
+    const body = state.staff.map((s, i) => {
+      // 出勤日数には、イベント出勤も含める
+      let cnt = 0;
+      const cells = rows[i].map((v, k) => {
+        if (offKind(s.id, k + 1) === EVENT) { hasEvent = true; cnt++; return 'ev'; }
+        if (v === 1) cnt++;
+        return v === 1;
+      });
+      return { name: s.name, cells, total: made ? cnt + '日' : '–' };
+    });
+    return { sheetName: (ui.month + 1) + '月', header, rows: body, note: hasEvent ? 'イ：イベント出勤（店のポイントには数えません）' : '' };
   }
 
   function exportExcel() {
@@ -381,7 +416,7 @@
     if (sandboxed) {
       // ダウンロードできない環境では、Excelに貼り付けられるタブ区切りでコピーする
       const lines = [data.header.map((c) => c.text.replace(/\n(.+)/, '($1)'))]
-        .concat(data.rows.map((r) => [r.name].concat(r.cells.map((w) => (w ? '出' : '')), r.total)));
+        .concat(data.rows.map((r) => [r.name].concat(r.cells.map((w) => (w === 'ev' ? 'イ' : w ? '出' : '')), r.total)));
       const tsv = lines.map((l) => l.join('\t')).join('\n');
       const done = () => toast('表をコピーしました。Excelやスプレッドシートに貼り付けられます');
       const fail = () => toast('コピーできませんでした');
@@ -457,6 +492,19 @@
     const it = offList(id)[+btn.dataset.slot];
     if (!it) return;
     setOff(id, it.day, it.kind === HARD ? SOFT : HARD);
+    changed();
+  });
+
+  $('eventRows').addEventListener('change', (e) => {
+    const sel = e.target.closest('.evAdd');
+    if (!sel || !sel.value) return;
+    setOff(sel.closest('.ev-row').dataset.id, +sel.value, EVENT);
+    changed();
+  });
+  $('eventRows').addEventListener('click', (e) => {
+    const btn = e.target.closest('.evDel');
+    if (!btn) return;
+    setOff(btn.closest('.ev-row').dataset.id, +btn.dataset.d, 0);
     changed();
   });
 

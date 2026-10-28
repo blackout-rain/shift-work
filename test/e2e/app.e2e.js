@@ -184,6 +184,45 @@ const ok = (name, cond, extra) => {
   ok('再読み込み後もスタッフ名が残る', /新人A/.test(await pg.textContent('#grid')));
   ok('再読み込み後もスタッフ数が残る', (await staffCount(pg)) === 9);
 
+  // ---- イベント出勤 ----
+  const evRow = (name) => `#eventRows .ev-row:has(.who[title="${name}"])`;
+  const firstName = await pg.$eval('#grid tbody tr:first-child td.n', (e) => e.firstChild.textContent);
+  const needBefore = await pg.$$eval('#grid tfoot tr:nth-child(2) td', (e) => e.map((x) => x.textContent));
+  // 日数に決まりがないので、同じ人に何日でも追加できる
+  for (const day of ['3', '4', '10', '17', '18', '24']) await pg.selectOption(`${evRow(firstName)} .evAdd`, day);
+  ok('イベントの日をいくつでも追加できる', (await pg.$$eval(`${evRow(firstName)} .chip`, (e) => e.length)) === 6);
+  ok('イベントの日が表に「イ」で出る', (await pg.$$eval('#grid tbody tr:first-child td.ev', (e) => e.map((x) => x.textContent.trim()))).join() === 'イ,イ,イ,イ,イ,イ');
+  await pg.click('#solveBtn');
+  await solved(pg);
+  const evCells = await pg.$$eval('#grid tbody tr:first-child td.cell', (tds) => tds.map((td) => (td.classList.contains('ev') ? 'ev' : td.classList.contains('w') ? 'w' : '-')));
+  ok('イベントの日は店の出勤に入らない', evCells.filter((c) => c === 'ev').length === 6 && ![2, 3, 9, 16, 17, 23].some((i) => evCells[i] === 'w'), evCells.join(''));
+  ok('イベントを入れても条件を満たしている', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  const total = await pg.$$eval('#grid tfoot tr:nth-child(2) td', (e) => e.map((x) => x.textContent));
+  ok('イベントの人は合計ptに数えない（必要ptは満たす）', !(await pg.$$eval('#grid tfoot td.ng', (e) => e.length)), total);
+  const cntText = await pg.textContent('#grid tbody tr:first-child td.cnt');
+  const workDays = evCells.filter((c) => c !== '-').length;
+  ok('出勤日数にイベントの日も入る', cntText === workDays + '日', { cntText, workDays });
+  await pg.click(`${evRow(firstName)} .evDel`);
+  ok('イベントの日を削除できる', (await pg.$$eval(`${evRow(firstName)} .chip`, (e) => e.length)) === 5);
+  // セルのタップ: 絶対休み → できれば休み → イベント → なし
+  const tapCell = '#grid tbody tr:last-child td.cell[data-d="26"]';
+  const tapCls = async () => (await pg.$eval(tapCell, (e) => e.className)).replace(/\s*(cell|lk)\s*/g, ' ').trim();
+  const tapSeq = [];
+  for (let k = 0; k < 4; k++) { await pg.click(tapCell); tapSeq.push(await tapCls()); }
+  ok('セルのタップで 絶対→できれば→イベント→なし と変わる', tapSeq[0].includes('r') && tapSeq[1].includes('s') && tapSeq[2] === 'ev' && !/\b(r|s|ev)\b/.test(tapSeq[3]), tapSeq);
+  // イベント3日連続は組めない
+  const lastName = await pg.$eval('#grid tbody tr:last-child td.n', (e) => e.firstChild.textContent);
+  for (const day of ['5', '6', '7']) await pg.selectOption(`${evRow(lastName)} .evAdd`, day); // 月・火・水（必要ptに余裕のある平日）
+  await pg.click('#solveBtn');
+  await solved(pg);
+  ok('イベントが3日続くと3連勤になるので、案内が出る', /3連勤になってしまいます/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+  await pg.click(`${evRow(lastName)} .evDel`);
+  await pg.click(`${evRow(lastName)} .evDel`);
+  await pg.click(`${evRow(lastName)} .evDel`);
+  await pg.click('#solveBtn');
+  await solved(pg);
+  ok('イベントを減らして作り直すと成功する', /すべての条件を満たしています/.test(await pg.textContent('#banner')), await pg.textContent('#banner'));
+
   // ---- Excel ----
   await pg.click('#solveBtn');
   await solved(pg);

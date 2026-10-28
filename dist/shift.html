@@ -11,6 +11,7 @@
   --req:#C9503A; --req-soft:#F8DDD6;
   --warn:#B86A00; --warn-soft:#FBE8C6;
   --bad:#B3261E; --bad-soft:#F9DEDC;
+  --ev:#5B3FB0; --ev-soft:#E6DFF5;
   --sat:#2F6FB3; --sun:#C9503A;
   --shadow:0 1px 0 rgba(22,38,42,.04),0 8px 24px -12px rgba(22,38,42,.18);
   --font:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
@@ -21,6 +22,7 @@
   --req:#F08A74; --req-soft:#432620;
   --warn:#EDA94A; --warn-soft:#42300F;
   --bad:#F2918B; --bad-soft:#4A2321;
+  --ev:#BDAAF5; --ev-soft:#2F2750;
   --sat:#7DB2EA; --sun:#F08A74;
   --shadow:0 1px 0 rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.6);
   color-scheme:dark}}
@@ -30,6 +32,7 @@
   --req:#F08A74; --req-soft:#432620;
   --warn:#EDA94A; --warn-soft:#42300F;
   --bad:#F2918B; --bad-soft:#4A2321;
+  --ev:#BDAAF5; --ev-soft:#2F2750;
   --sat:#7DB2EA; --sun:#F08A74;
   --shadow:0 1px 0 rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.6);
   color-scheme:dark}
@@ -83,6 +86,7 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .g td.w{background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
 .g td.r{background:var(--req-soft);color:var(--req);font-weight:700}
 .g td.s{background:var(--warn-soft);color:var(--warn);font-weight:700}
+.g td.ev{background:var(--ev-soft);color:var(--ev);font-weight:700}
 .g td.sm{box-shadow:inset 0 0 0 2px var(--warn)}
 .g td.v{box-shadow:inset 0 0 0 2px var(--bad);color:var(--bad)}
 .g td.cnt{color:var(--muted);min-width:44px;border-right:0}
@@ -103,6 +107,7 @@ table.g{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font
 .sw.w{background:var(--accent-soft);border:1px solid var(--accent)}
 .sw.r{background:var(--req-soft);border:1px solid var(--req)}
 .sw.s{background:var(--warn-soft);border:1px solid var(--warn)}
+.sw.ev{background:var(--ev-soft);border:1px solid var(--ev)}
 .sw.sm{background:var(--accent-soft);border:2px solid var(--warn)}
 .sw.v{border:2px solid var(--bad)}
 
@@ -154,6 +159,15 @@ details[open] summary{margin-bottom:8px}
   .off-row .who{grid-column:1/-1}
 }
 
+/* イベント出勤の入力 */
+.ev-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:8px 14px}
+.ev-row{display:grid;grid-template-columns:2.8em 1fr;gap:6px;align-items:center}
+.ev-row .who{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-row .chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:2px;background:var(--ev-soft);color:var(--ev);border:1px solid var(--ev);border-radius:999px;padding:0 4px 0 9px;font-size:13px;font-weight:700;line-height:24px}
+.chip .evDel{border:0;background:transparent;color:inherit;cursor:pointer;padding:0 4px;font-size:14px;line-height:1}
+.ev-row .evAdd{border:1px solid var(--line);background:var(--bg);border-radius:6px;height:26px;padding:0 4px;font-size:13px;color:var(--muted);min-width:0}
+
 /* 確認ポップ */
 [hidden]{display:none!important}
 .modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(10,20,22,.5)}
@@ -176,6 +190,7 @@ details[open] summary{margin-bottom:8px}
   .g thead th.n,.g td.n{position:static;background:#fff!important}
   .g td.w{background:#fff!important;font-weight:700}
   .g td.r,.g td.s{background:#f0f0f0!important}
+  .g td.ev{background:#e4e4e4!important;font-weight:700}
   .g th.hi{box-shadow:none!important;background:#f6e7e3!important}
   .scr{display:none}
   .prt{display:inline}
@@ -216,9 +231,10 @@ details[open] summary{margin-bottom:8px}
       <span><i class="sw w"></i>出勤</span>
       <span><i class="sw r"></i>絶対休み</span>
       <span><i class="sw s"></i>できれば休み</span>
+      <span><i class="sw ev"></i>イベント出勤（店のpt対象外）</span>
       <span><i class="sw sm"></i>できれば休みだが出勤</span>
       <span><i class="sw v"></i>3連勤</span>
-      <span class="hint">「希望休を入れる」モードでは、セルをタップするたびに 絶対休み → できれば休み → なし と変わります。</span>
+      <span class="hint">「希望休を入れる」モードでは、セルをタップするたびに 絶対休み → できれば休み → イベント → なし と変わります。</span>
     </div>
   </section>
 
@@ -227,6 +243,11 @@ details[open] summary{margin-bottom:8px}
       <summary>希望休の入力（<span id="offMonth"></span>）</summary>
       <div id="offRows" class="off-rows"></div>
       <p class="note">「絶」は絶対に休み、「△」はできれば休み（ボタンで切り替え）。1人3日まで。4日以上は表のセルをタップ。</p>
+    </details>
+    <details open class="wide">
+      <summary>イベント出勤の入力（<span id="evMonth"></span>）</summary>
+      <div id="eventRows" class="ev-rows"></div>
+      <p class="note">イベントに出る日です。日数に決まりはなく、何日でも追加できます。その日は出勤扱い（連勤には数えます）で、店の必要ポイントには数えません。</p>
     </details>
     <details open class="wide">
       <summary>必要ポイントとスタッフ</summary>
@@ -265,6 +286,7 @@ details[open] summary{margin-bottom:8px}
  *   - 毎日、出勤者の戦力ポイント合計が必要ポイント以上
  *   - 「絶対」の希望休の日は出勤しない
  *   - 3日連続では出勤しない（2連勤まで）
+ *   - イベント出勤の日は、その人を出勤扱い（連勤には数える）にし、店のポイントには数えない
  *
  * 「何連勤しているか」(0/1/2) を人数分まとめた状態を使い、
  * 最後の日まで条件を満たせるかを厳密に調べる。条件を満たす表が
@@ -302,6 +324,7 @@ details[open] summary{margin-bottom:8px}
    *   high:       boolean[D]       土日祝など高め設定の日（偏りの計算に使う）
    *   off:        boolean[n][D]    絶対の希望休
    *   soft:       boolean[n][D]    できれば休みたい日（任意。絶対と重なる日は絶対を優先）
+   *   event:      boolean[n][D]    イベントに出る日（任意）。出勤扱い・連勤に数える・店のポイントには数えない
    *   prevStreak: number[n]        月初の時点で何日連続で出勤中か（0〜2）
    *   workBase:   number[n]        すでに出勤した日数（任意。偏りの計算に足す。solveFrom が使う）
    *   highBase:   number[n]        すでに出勤した高め設定の日数（任意）
@@ -321,8 +344,24 @@ details[open] summary{margin-bottom:8px}
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const high = input.high || need.map(() => false);
     const prev = input.prevStreak || points.map(() => 0);
-    const workBase = input.workBase || points.map(() => 0);
-    const highBase = input.highBase || points.map(() => 0);
+    const event = input.event || points.map(() => new Array(D).fill(false));
+    // イベント出勤の人は、その日は店の出勤から外し（allowedMask）、連勤だけ進める（nextState に足す）
+    const evMask = [];
+    const evWork = new Array(n).fill(0);
+    const evHigh = new Array(n).fill(0);
+    for (let d = 0; d < D; d++) {
+      let m = 0;
+      for (let i = 0; i < n; i++)
+        if (event[i][d] && !off[i][d]) {
+          m |= 1 << i;
+          evWork[i]++;
+          if (high[d]) evHigh[i]++;
+        }
+      evMask.push(m);
+    }
+    // 偏りの計算では、イベント出勤も出勤日数に入れる
+    const workBase = (input.workBase || points.map(() => 0)).map((v, i) => v + evWork[i]);
+    const highBase = (input.highBase || points.map(() => 0)).map((v, i) => v + evHigh[i]);
     // その日に「できれば休み」の人（絶対の希望休の人は出勤できないので除く）
     const softMask = [];
     for (let d = 0; d < D; d++) {
@@ -352,7 +391,13 @@ details[open] summary{margin-bottom:8px}
     const digit = (st, i) => Math.floor(st / pow3[i]) % 3;
     const allowedMask = (d, st) => {
       let m = 0;
-      for (let i = 0; i < n; i++) if (digit(st, i) < MAX_RUN && !off[i][d]) m |= 1 << i;
+      for (let i = 0; i < n; i++) if (digit(st, i) < MAX_RUN && !off[i][d] && !(evMask[d] & (1 << i))) m |= 1 << i;
+      return m;
+    };
+    // その日イベントに出る人のうち、すでに2連勤中の人（この状態では3連勤になってしまう）
+    const evOver = (d, st) => {
+      let m = 0;
+      for (let i = 0; i < n; i++) if (evMask[d] & (1 << i) && digit(st, i) >= MAX_RUN) m |= 1 << i;
       return m;
     };
     const nextState = (st, sub) => {
@@ -398,10 +443,11 @@ details[open] summary{margin-bottom:8px}
       if (d === D) return 0;
       const k = d * S + st;
       if (memo[k] >= 0) return memo[k];
+      if (evOver(d, st)) return (memo[k] = INF);
       const allowed = allowedMask(d, st);
       let best = INF;
       for (const sub of minimalSubsets(d, allowed)) {
-        const rest = minPenalty(d + 1, nextState(st, sub));
+        const rest = minPenalty(d + 1, nextState(st, sub | evMask[d]));
         if (rest < INF) best = Math.min(best, dayPenalty(d, sub) + rest);
       }
       memo[k] = best;
@@ -416,15 +462,33 @@ details[open] summary{margin-bottom:8px}
       for (let d = 0; d < D; d++) {
         const next = new Set();
         let maxPossible = 0;
+        let overMask = 0;
+        let usable = 0;
         for (const st of reach) {
+          const over = evOver(d, st);
+          if (over) {
+            overMask |= over;
+            continue;
+          }
+          usable++;
           const allowed = allowedMask(d, st);
           maxPossible = Math.max(maxPossible, psum[allowed]);
-          for (const sub of minimalSubsets(d, allowed)) next.add(nextState(st, sub));
+          for (const sub of minimalSubsets(d, allowed)) next.add(nextState(st, sub | evMask[d]));
+        }
+        if (usable === 0) {
+          // イベント出勤が重なって、3連勤になってしまう
+          const staff = [];
+          for (let i = 0; i < n; i++) if (overMask & (1 << i)) staff.push(i);
+          return { reason: 'run', day: d, staff };
         }
         if (next.size === 0) {
           const offStaff = [];
-          for (let i = 0; i < n; i++) if (off[i][d]) offStaff.push(i);
-          return { reason: 'short', day: d, need: need[d], maxPossible, offStaff };
+          const eventStaff = [];
+          for (let i = 0; i < n; i++) {
+            if (off[i][d]) offStaff.push(i);
+            if (evMask[d] & (1 << i)) eventStaff.push(i);
+          }
+          return { reason: 'short', day: d, need: need[d], maxPossible, offStaff, eventStaff };
         }
         reach = next;
       }
@@ -462,7 +526,7 @@ details[open] summary{margin-bottom:8px}
         let best = -1;
         let bestScore = Infinity;
         for (const sub of minimalSubsets(d, allowed)) {
-          const nxt = nextState(st, sub);
+          const nxt = nextState(st, sub | evMask[d]);
           const rest = minPenalty(d + 1, nxt);
           if (rest >= INF) continue;
           let score = dayPenalty(d, sub) + rest + rng() * noise;
@@ -486,7 +550,7 @@ details[open] summary{margin-bottom:8px}
             if (high[d]) hiWork[i]++;
           }
         }
-        st = nextState(st, best);
+        st = nextState(st, best | evMask[d]);
       }
       return { rows, surplus, missed, cost: costOf(surplus, missed, work, hiWork) };
     }
@@ -526,8 +590,8 @@ details[open] summary{margin-bottom:8px}
         let run = Math.min(MAX_RUN, Math.max(0, prev[i] | 0));
         const r = rows[i];
         for (let d = 0; d < D; d++) {
-          if (r[d]) {
-            if (off[i][d] || ++run > MAX_RUN) return false;
+          if (r[d] || evMask[d] & (1 << i)) {
+            if ((r[d] && (off[i][d] || evMask[d] & (1 << i))) || ++run > MAX_RUN) return false;
           } else run = 0;
         }
         return true;
@@ -638,8 +702,9 @@ details[open] summary{margin-bottom:8px}
       let work = 0;
       let hi = 0;
       for (let d = 0; d < from; d++) {
-        run = rows[i][d] ? run + 1 : 0;
-        if (rows[i][d]) {
+        const w = rows[i][d] || (input.event && input.event[i][d]); // イベント出勤も出勤日数・連勤に数える
+        run = w ? run + 1 : 0;
+        if (w) {
           work++;
           if (high[d]) hi++;
         }
@@ -655,6 +720,7 @@ details[open] summary{margin-bottom:8px}
       high: tail(high),
       off: input.off && input.off.map(tail),
       soft: input.soft && input.soft.map(tail),
+      event: input.event && input.event.map(tail),
       prevStreak,
       workBase,
       highBase,
@@ -679,11 +745,12 @@ details[open] summary{margin-bottom:8px}
     const soft = input.soft || points.map(() => new Array(D).fill(false));
     const prev = input.prevStreak || points.map(() => 0);
 
+    const event = input.event || points.map(() => new Array(D).fill(false));
     const total = [];
     const diff = [];
     for (let d = 0; d < D; d++) {
       let t = 0;
-      for (let i = 0; i < n; i++) if (rows[i] && rows[i][d]) t += points[i];
+      for (let i = 0; i < n; i++) if (rows[i] && rows[i][d] && !event[i][d]) t += points[i]; // イベント出勤は店のポイントに数えない
       total.push(t);
       diff.push(t - need[d]);
     }
@@ -692,7 +759,7 @@ details[open] summary{margin-bottom:8px}
     for (let i = 0; i < n; i++) {
       const line = new Array(Math.min(MAX_RUN, Math.max(0, prev[i] | 0))).fill(1);
       const offset = line.length;
-      for (let d = 0; d < D; d++) line.push(rows[i] && rows[i][d] ? 1 : 0);
+      for (let d = 0; d < D; d++) line.push((rows[i] && rows[i][d]) || event[i][d] ? 1 : 0);
       let run = 0;
       for (let k = 0; k < line.length; k++) {
         run = line[k] ? run + 1 : 0;
@@ -804,7 +871,8 @@ details[open] summary{margin-bottom:8px}
  * build({ sheetName, header, rows }) → Uint8Array
  *   header: [{ text, day, high }]  day: 'sat' | 'sun'（土曜／日曜・祝日の文字色）、high: 必要ptが多めの日（上に赤い太線）
  *           先頭がスタッフ列、末尾が出勤日数列。日付セルの text は「1\n木」のように改行で曜日を分ける
- *   rows:   [{ name, cells: [true|false, …], total }]
+ *   rows:   [{ name, cells: [true|false|'ev', …], total }]  true=出勤 'ev'=イベント出勤（「イ」）
+ *   note:   表の下に1行だけ書く説明（任意）
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -891,10 +959,10 @@ details[open] summary{margin-bottom:8px}
   }
 
   /* ---------- 見た目（画面の配色に合わせる） ---------- */
-  const COLOR = { line: 'FF8A9A94', head: 'FFE8ECE7', headInk: 'FF5A6A6C', ink: 'FF16262A', work: 'FFD5EDE5', workInk: 'FF06483B', sat: 'FF2F6FB3', sun: 'FFC9503A', hi: 'FFC9503A' };
+  const COLOR = { line: 'FF8A9A94', head: 'FFE8ECE7', headInk: 'FF5A6A6C', ink: 'FF16262A', work: 'FFD5EDE5', workInk: 'FF06483B', sat: 'FF2F6FB3', sun: 'FFC9503A', hi: 'FFC9503A', ev: 'FFE6DFF5', evInk: 'FF5B3FB0' };
 
   // cellXfs の番号
-  const S = { name: 1, headName: 2, head: 3, headSat: 4, headSun: 5, work: 6, off: 7, total: 8, headCnt: 9 };
+  const S = { name: 1, headName: 2, head: 3, headSat: 4, headSun: 5, work: 6, off: 7, total: 8, headCnt: 9, event: 13, note: 14 };
   // 必要ptが多めの日の見出しは、上に赤い太線を付けた別スタイルにする
   const HI = { head: 10, headSat: 11, headSun: 12 };
 
@@ -907,10 +975,10 @@ details[open] summary{margin-bottom:8px}
     const fill = (rgb) => '<fill><patternFill patternType="solid"><fgColor rgb="' + rgb + '"/><bgColor indexed="64"/></patternFill></fill>';
     const xf = (font, fillId, borderId, h) => '<xf numFmtId="0" fontId="' + font + '" fillId="' + fillId + '" borderId="' + borderId + '" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">' +
       '<alignment horizontal="' + h + '" vertical="center" wrapText="1"' + (h === 'left' ? ' indent="1"' : '') + '/></xf>';
-    // fonts: 0 通常 1 太字 2 見出し(灰) 3 土曜 4 日祝 5 出
-    const fonts = [font(COLOR.ink, false), font(COLOR.ink, false), font(COLOR.headInk, false), font(COLOR.sat, false), font(COLOR.sun, false), font(COLOR.workInk, true)];
-    // fills: 0,1 は Excel が必須とする既定 2 見出し 3 出
-    const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill(COLOR.head), fill(COLOR.work)];
+    // fonts: 0 通常 1 太字 2 見出し(灰) 3 土曜 4 日祝 5 出 6 イベント
+    const fonts = [font(COLOR.ink, false), font(COLOR.ink, false), font(COLOR.headInk, false), font(COLOR.sat, false), font(COLOR.sun, false), font(COLOR.workInk, true), font(COLOR.evInk, true)];
+    // fills: 0,1 は Excel が必須とする既定 2 見出し 3 出 4 イベント
+    const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>', fill(COLOR.head), fill(COLOR.work), fill(COLOR.ev)];
     const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>', border(false), border(true)];
     // borderId: 1 = 四方に細い罫線、2 = 上だけ赤い太線
     const xfs = [
@@ -927,6 +995,8 @@ details[open] summary{margin-bottom:8px}
       xf(2, 2, 2, 'center'), // 10 見出し(平日だが多めの日)
       xf(3, 2, 2, 'center'), // 11 見出し(土・多め)
       xf(4, 2, 2, 'center'), // 12 見出し(日祝・多め)
+      xf(6, 4, 1, 'center'), // 13 イベント出勤
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>', // 14 表の下の説明（折り返さず右へはみ出して読ませる）
     ];
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
       '<fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts>' +
@@ -946,9 +1016,10 @@ details[open] summary{margin-bottom:8px}
   const str = (ref, style, text) => '<c r="' + ref + '" s="' + style + '" t="inlineStr"><is><t xml:space="preserve">' + xml(clean(text)) + '</t></is></c>';
   const blank = (ref, style) => '<c r="' + ref + '" s="' + style + '"/>';
 
-  function sheet(header, rows) {
+  function sheet(header, rows, note) {
     const cols = header.length;
-    const last = colName(cols - 1) + (rows.length + 1);
+    const noteRow = rows.length + 3; // 表との間に1行あける
+    const last = colName(cols - 1) + (note ? noteRow : rows.length + 1);
     let h = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
       '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:' + last + '"/>' +
       '<sheetViews><sheetView workbookViewId="0" showGridLines="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" activePane="bottomRight" state="frozen"/>' +
@@ -973,10 +1044,11 @@ details[open] summary{margin-bottom:8px}
       h += '<row r="' + n + '" ht="24" customHeight="1">' + str('A' + n, S.name, r.name);
       r.cells.forEach((works, ci) => {
         const ref = colName(ci + 1) + n;
-        h += works ? str(ref, S.work, '出') : blank(ref, S.off);
+        h += works === 'ev' ? str(ref, S.event, 'イ') : works ? str(ref, S.work, '出') : blank(ref, S.off);
       });
       h += str(colName(cols - 1) + n, S.total, r.total) + '</row>';
     });
+    if (note) h += '<row r="' + noteRow + '">' + str('A' + noteRow, S.note, note) + '</row>';
     return h + '</sheetData><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>' +
       '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>';
   }
@@ -999,7 +1071,7 @@ details[open] summary{margin-bottom:8px}
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
         '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
       { name: 'xl/styles.xml', data: styles() },
-      { name: 'xl/worksheets/sheet1.xml', data: sheet(opt.header, opt.rows) },
+      { name: 'xl/worksheets/sheet1.xml', data: sheet(opt.header, opt.rows, opt.note || '') },
     ]);
   }
 
@@ -1082,8 +1154,10 @@ details[open] summary{margin-bottom:8px}
   }
 
   /* ---------- 希望休（1=絶対休み、2=できれば休み） ---------- */
+  // 3=イベント出勤（出勤扱い・連勤に数える・店のポイントには数えない）。希望休と同じ置き場に入れ、1日につきどれか1つ
   const HARD = 1;
   const SOFT = 2;
+  const EVENT = 3;
   const offKind = (id, d) => (md().off[id] && md().off[id][d]) || 0;
 
   /* ---------- 計算エンジンとの受け渡し ---------- */
@@ -1097,6 +1171,7 @@ details[open] summary{margin-bottom:8px}
       high: days.map(isHigh),
       off: state.staff.map((s) => days.map((d) => offKind(s.id, d) === HARD)),
       soft: state.staff.map((s) => days.map((d) => offKind(s.id, d) === SOFT)),
+      event: state.staff.map((s) => days.map((d) => offKind(s.id, d) === EVENT)),
       prevStreak: state.staff.map((s) => s.prevStreak || 0),
     };
   }
@@ -1142,7 +1217,8 @@ details[open] summary{margin-bottom:8px}
         let cls = 'cell' + lk(d);
         let body;
         let title = '';
-        if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
+        if (kind === EVENT) { cls += ' ev'; body = 'イ'; title = 'イベント出勤（店のポイントには数えません）'; cnt++; }
+        else if (kind === HARD) { cls += ' r'; body = '<span class="scr">絶</span><span class="prt">休</span>'; title = '絶対に休み'; }
         else if (kind === SOFT && !works) { cls += ' s'; body = '<span class="scr">△</span><span class="prt">休</span>'; title = 'できれば休み'; }
         else if (works) { cls += ' w' + (kind === SOFT ? ' sm' : ''); body = '出'; title = kind === SOFT ? 'できれば休みの希望でしたが出勤です' : ''; }
         else body = '<span class="prt">休</span>';
@@ -1167,6 +1243,7 @@ details[open] summary{margin-bottom:8px}
     $('grid').innerHTML = h;
     renderBanner(res, made);
     renderOffForm();
+    renderEventForm();
     renderFromDay(made);
   }
 
@@ -1260,6 +1337,21 @@ details[open] summary{margin-bottom:8px}
     $('offMonth').textContent = (ui.month + 1) + '月';
   }
 
+  // イベント出勤の入力。日数に決まりがないので、スタッフごとに日付を好きなだけ追加・削除できる
+  function renderEventForm() {
+    const D = dayCount();
+    const dayLabel = (d) => d + '(' + (holiday(d) ? '祝' : WD[weekday(d)]) + ')';
+    $('eventRows').innerHTML = state.staff.map((s) => {
+      const days = eventDays(s.id);
+      const opts = ['<option value="">＋日付を追加</option>'];
+      for (let d = 1; d <= D; d++) if (!days.includes(d)) opts.push('<option value="' + d + '">' + dayLabel(d) + '</option>');
+      return '<div class="ev-row" data-id="' + s.id + '"><div class="who" title="' + esc(s.name) + '">' + esc(s.name) + '</div><div class="chips">' +
+        days.map((d) => '<span class="chip">' + dayLabel(d) + '<button class="evDel" data-d="' + d + '" aria-label="' + esc(s.name) + 'の' + d + '日のイベントを削除" title="削除">×</button></span>').join('') +
+        '<select class="evAdd" aria-label="' + esc(s.name) + 'にイベントの日を追加">' + opts.join('') + '</select></div></div>';
+    }).join('');
+    $('evMonth').textContent = (ui.month + 1) + '月';
+  }
+
   function renderMonth() {
     $('monthLabel').textContent = ui.year + '年' + (ui.month + 1) + '月';
   }
@@ -1291,27 +1383,29 @@ details[open] summary{margin-bottom:8px}
   }
 
   /* ---------- 操作 ---------- */
-  // kind: 1=絶対休み 2=できれば休み 0=解除
+  // kind: 1=絶対休み 2=できれば休み 3=イベント出勤 0=解除
   function setOff(id, d, kind) {
     const m = md();
     m.off[id] = m.off[id] || {};
     if (!kind) delete m.off[id][d];
     else {
       m.off[id][d] = kind;
-      if (kind === HARD && m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
+      if ((kind === HARD || kind === EVENT) && m.shifts && m.shifts[id]) m.shifts[id][d - 1] = 0;
     }
   }
-  const offList = (id) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y).map((day) => ({ day, kind: offKind(id, day) }));
+  const kindList = (id, pick) => Object.keys(md().off[id] || {}).map(Number).sort((x, y) => x - y).map((day) => ({ day, kind: offKind(id, day) })).filter((x) => pick(x.kind));
+  const offList = (id) => kindList(id, (k) => k === HARD || k === SOFT); // 希望休の入力欄に出すもの
+  const eventDays = (id) => kindList(id, (k) => k === EVENT).map((x) => x.day);
 
   function toggleCell(i, d) {
     const s = state.staff[i];
     const m = md();
     if (ui.mode === 'off') {
-      // タップするたびに 絶対休み → できれば休み → なし
-      const next = { 0: HARD, [HARD]: SOFT, [SOFT]: 0 }[offKind(s.id, d)];
+      // タップするたびに 絶対休み → できれば休み → イベント → なし
+      const next = { 0: HARD, [HARD]: SOFT, [SOFT]: EVENT, [EVENT]: 0 }[offKind(s.id, d)];
       setOff(s.id, d, next);
     } else {
-      if (offKind(s.id, d) === HARD) return;
+      if (offKind(s.id, d) === HARD || offKind(s.id, d) === EVENT) return;
       if (!m.shifts) setRows(currentRows());
       if (!m.shifts[s.id]) m.shifts[s.id] = new Array(dayCount()).fill(0);
       m.shifts[s.id][d - 1] = m.shifts[s.id][d - 1] ? 0 : 1;
@@ -1354,10 +1448,17 @@ details[open] summary{margin-bottom:8px}
     if (c.reason === 'short') {
       const day = c.day + 1;
       const who = c.offStaff.map((i) => state.staff[i].name);
+      const ev = (c.eventStaff || []).map((i) => state.staff[i].name);
       html = '<span><b>' + (ui.month + 1) + '/' + day + '（' + WD[weekday(day)] + '）の必要' + c.need + 'ptを満たせません。</b>' +
-        'この日に出られる人の合計は最大' + c.maxPossible + 'ptです。</span>' +
+        'この日に店に出られる人の合計は最大' + c.maxPossible + 'ptです。</span>' +
         (who.length ? '<span>この日の希望休：' + esc(who.join('、')) + '</span>' : '') +
-        '<span>直前までの連勤制限も影響しています。この日の希望休を減らす、必要ptを下げる、スタッフを増やすのいずれかで解決します。</span>';
+        (ev.length ? '<span>この日のイベント出勤：' + esc(ev.join('、')) + '</span>' : '') +
+        '<span>直前までの連勤制限も影響しています。この日の希望休やイベントを減らす、必要ptを下げる、スタッフを増やすのいずれかで解決します。</span>';
+    } else if (c.reason === 'run') {
+      const day = c.day + 1;
+      const who = c.staff.map((i) => state.staff[i].name);
+      html = '<span><b>' + (ui.month + 1) + '/' + day + '（' + WD[weekday(day)] + '）に、' + esc(who.join('、')) + 'が3連勤になってしまいます。</b></span>' +
+        '<span>イベント出勤も連勤に数えます。イベントの日が3日以上続いているか、前月末からの連勤と重なっています。イベントの日を見直してください。</span>';
     } else {
       html = '<span><b>条件を満たす表を作れませんでした。</b>スタッフの設定を確認してください。</span>';
     }
@@ -1377,12 +1478,18 @@ details[open] summary{margin-bottom:8px}
       header.push({ text: d + '\n' + (hol ? '祝' : WD[w]), day: hol || w === 0 ? 'sun' : w === 6 ? 'sat' : '', high: isHigh(d) });
     }
     header.push({ text: '出勤' });
-    const body = state.staff.map((s, i) => ({
-      name: s.name,
-      cells: rows[i].map((v) => v === 1),
-      total: made ? rows[i].filter((v) => v === 1).length + '日' : '–',
-    }));
-    return { sheetName: (ui.month + 1) + '月', header, rows: body };
+    let hasEvent = false;
+    const body = state.staff.map((s, i) => {
+      // 出勤日数には、イベント出勤も含める
+      let cnt = 0;
+      const cells = rows[i].map((v, k) => {
+        if (offKind(s.id, k + 1) === EVENT) { hasEvent = true; cnt++; return 'ev'; }
+        if (v === 1) cnt++;
+        return v === 1;
+      });
+      return { name: s.name, cells, total: made ? cnt + '日' : '–' };
+    });
+    return { sheetName: (ui.month + 1) + '月', header, rows: body, note: hasEvent ? 'イ：イベント出勤（店のポイントには数えません）' : '' };
   }
 
   function exportExcel() {
@@ -1390,7 +1497,7 @@ details[open] summary{margin-bottom:8px}
     if (sandboxed) {
       // ダウンロードできない環境では、Excelに貼り付けられるタブ区切りでコピーする
       const lines = [data.header.map((c) => c.text.replace(/\n(.+)/, '($1)'))]
-        .concat(data.rows.map((r) => [r.name].concat(r.cells.map((w) => (w ? '出' : '')), r.total)));
+        .concat(data.rows.map((r) => [r.name].concat(r.cells.map((w) => (w === 'ev' ? 'イ' : w ? '出' : '')), r.total)));
       const tsv = lines.map((l) => l.join('\t')).join('\n');
       const done = () => toast('表をコピーしました。Excelやスプレッドシートに貼り付けられます');
       const fail = () => toast('コピーできませんでした');
@@ -1466,6 +1573,19 @@ details[open] summary{margin-bottom:8px}
     const it = offList(id)[+btn.dataset.slot];
     if (!it) return;
     setOff(id, it.day, it.kind === HARD ? SOFT : HARD);
+    changed();
+  });
+
+  $('eventRows').addEventListener('change', (e) => {
+    const sel = e.target.closest('.evAdd');
+    if (!sel || !sel.value) return;
+    setOff(sel.closest('.ev-row').dataset.id, +sel.value, EVENT);
+    changed();
+  });
+  $('eventRows').addEventListener('click', (e) => {
+    const btn = e.target.closest('.evDel');
+    if (!btn) return;
+    setOff(btn.closest('.ev-row').dataset.id, +btn.dataset.d, 0);
     changed();
   });
 
